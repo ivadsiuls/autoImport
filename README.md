@@ -6,7 +6,7 @@
 
 <p align="center">a little customizable auto import plugin built with vide</p>
 
-you can download it [here](https://create.roblox.com/store/asset/101929511023567/ivads-Auto-Import)
+<p align="center">download it <a href="https://create.roblox.com/store/asset/101929511023567/ivads-Auto-Import">here</a></p>
 
 ## contributions
 contributions are welcome! i take a look at PRs weekly.
