@@ -1,0 +1,10 @@
+[package]
+name = "ivadsiuls/autoimport"
+description = "ivad's Auto Import plugin"
+version = "1.0.0"
+license = "MIT"
+realm = "shared"
+registry = "https://github.com/upliftgames/wally-index"
+
+[dependencies]
+vide = "centau/vide@0.4.0"

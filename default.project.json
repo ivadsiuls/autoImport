@@ -1,0 +1,11 @@
+{
+    "tree": {
+        "$path": "src",
+        "services": {
+            "$path": "services.json"
+        },
+        "Packages": {
+            "$path": "Packages"
+        }
+    }
+}
