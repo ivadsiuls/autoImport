@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS: Types.Settings = {
 	prefix = ":",
 	autoServices = true,
 	additionalServices = {},
+	clientDirectories = {},
 	ignoredNames = { "_Index", "_index", "node_modules", "include" },
 	overrideWorkspaceSettings = false,
 }
@@ -63,6 +64,7 @@ const function normalizeSettings(value: any): Types.Settings
 		prefix = if typeof(value.prefix) == "string" then value.prefix else DEFAULT_SETTINGS.prefix,
 		autoServices = value.autoServices ~= false,
 		additionalServices = normalizeList(value.additionalServices, DEFAULT_SETTINGS.additionalServices),
+		clientDirectories = normalizeList(value.clientDirectories, DEFAULT_SETTINGS.clientDirectories),
 		ignoredNames = normalizeList(value.ignoredNames, DEFAULT_SETTINGS.ignoredNames),
 		overrideWorkspaceSettings = value.overrideWorkspaceSettings == true,
 	}

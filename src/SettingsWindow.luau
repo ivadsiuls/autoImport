@@ -33,7 +33,10 @@ const WIDGET_ID = "sircfenner-auto-import-settings"
 const function parseList(text: string): { string }
 	local names = {}
 	for rawName in string.gmatch(text, "[^,%s]+") do
-		table.insert(names, rawName)
+		const name = string.gsub(rawName, "^['\"]?(.-)['\"]?$", "%1")
+		if name ~= "" then
+			table.insert(names, name)
+		end
 	end
 	return names
 end
@@ -53,6 +56,7 @@ const function createWindow(plugin: Plugin, store: Store)
 	widget.Title = "ivad's Auto Import Settings"
 
 	local additionalServicesBox: TextBox
+	local clientDirectoriesBox: TextBox
 	local prefixBox: TextBox
 	local namesBox: TextBox
 	local enabledToggle
@@ -64,6 +68,7 @@ const function createWindow(plugin: Plugin, store: Store)
 	local generalSection
 	local requiresSection
 	local servicesSection
+	local clientDirectoriesSection
 	local ignoreSection
 
 	const activeScope = (source("global" :: Types.SettingsScope) :: any) :: (arg: Types.SettingsScope?) -> Types.SettingsScope
@@ -234,6 +239,17 @@ const function createWindow(plugin: Plugin, store: Store)
 					})
 					bindAutomaticSectionHeight(servicesSection)
 
+					clientDirectoriesSection = Section(content, "Client Directories", 42)
+					clientDirectoriesBox = LargeTextBoxSetting({
+						parent = clientDirectoriesSection.body,
+						name = "ClientDirectories",
+						placeholderText = "ReplicatedStorage.Services, ReplicatedStorage.Modules.Client",
+						focusLost = function()
+							store.update(activeScope(), "clientDirectories", parseList(clientDirectoriesBox.Text))
+						end,
+					})
+					bindAutomaticSectionHeight(clientDirectoriesSection)
+
 					ignoreSection = Section(content, "Ignore", 42)
 					namesBox = LargeTextBoxSetting({
 						parent = ignoreSection.body,
@@ -295,6 +311,9 @@ const function createWindow(plugin: Plugin, store: Store)
 			keywordDropdown.text(settings.keyword)
 			if not additionalServicesBox:IsFocused() then
 				additionalServicesBox.Text = table.concat(settings.additionalServices, ", ")
+			end
+			if not clientDirectoriesBox:IsFocused() then
+				clientDirectoriesBox.Text = table.concat(settings.clientDirectories, ", ")
 			end
 			if not prefixBox:IsFocused() then
 				prefixBox.Text = settings.prefix

@@ -66,6 +66,7 @@ export type AutocompleteResponseItem = {
 	preselect: boolean?,
 	textEdit: {
 		newText: string,
+		insert: Range,
 		replace: Range,
 	}?,
 }
@@ -90,6 +91,7 @@ export type Settings = {
 	prefix: string,
 	autoServices: boolean,
 	additionalServices: { string },
+	clientDirectories: { string },
 	ignoredNames: { string },
 	overrideWorkspaceSettings: boolean,
 }

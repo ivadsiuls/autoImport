@@ -36,7 +36,30 @@ const clientDirectories = {
 	game:GetService("StarterPack"),
 }
 
-const function getContext(container: LuaSourceContainer): Context
+const function normalizePath(path: string): string
+	path = string.gsub(path, "/", ".")
+	path = string.gsub(path, "^game%.", "")
+	path = string.gsub(path, "^%s+", "")
+	path = string.gsub(path, "%s+$", "")
+	return path
+end
+
+const function isInConfiguredClientDirectory(instance: Instance, settings: Types.Settings): boolean
+	const fullName = instance:GetFullName()
+	for _, rawPath in settings.clientDirectories do
+		const path = normalizePath(rawPath)
+		if path == "" then
+			continue
+		end
+		if fullName == path or string.sub(fullName, 1, #path + 1) == `{path}.` then
+			return true
+		end
+	end
+
+	return false
+end
+
+const function getContext(container: LuaSourceContainer, settings: Types.Settings): Context
 	if container:IsA("LocalScript") then -- do this check first as localscript inherits script
 		return "client"
 	elseif container:IsA("Script") then
@@ -44,6 +67,9 @@ const function getContext(container: LuaSourceContainer): Context
 			return "client"
 		end
 		return "server"
+	end
+	if isInConfiguredClientDirectory(container, settings) then
+		return "client"
 	end
 	for _, dir in serverDirectories do
 		if container:IsDescendantOf(dir) then
@@ -58,13 +84,13 @@ const function getContext(container: LuaSourceContainer): Context
 	return "shared"
 end
 
-const function canAccess(origin: LuaSourceContainer, target: ModuleScript)
+const function canAccess(origin: LuaSourceContainer, target: ModuleScript, settings: Types.Settings)
 	if origin == target then
 		return false
 	end
 
-	const originContext = getContext(origin)
-	const targetContext = getContext(target)
+	const originContext = getContext(origin, settings)
+	const targetContext = getContext(target, settings)
 	if originContext == "server" then
 		return targetContext == "server" or targetContext == "shared"
 	elseif originContext == "client" then
@@ -79,7 +105,7 @@ local latestModules: { ModuleScript } = {}
 const function getModules(origin: LuaSourceContainer, settings: Types.Settings): { ModuleScript }
 	local modules = {}
 	for _, module in latestModules do
-		if canAccess(origin, module) and isImportable(module, settings) then
+		if canAccess(origin, module, settings) and isImportable(module, settings) then
 			table.insert(modules, module)
 		end
 	end

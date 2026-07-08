@@ -21,6 +21,7 @@ const services = require("@self/services")
 const CALLBACK_ID = "ivads-auto-import"
 const PAT_IDENT = `[_%a][_%w]*`
 const SETTINGS_ICON = "rbxassetid://107203088937000"
+const BOOTSTRAP_DELAY = 0.15
 
 const function isSafeIdentifier(text: string)
 	return string.match(text, `^{PAT_IDENT}$`) ~= nil
@@ -256,9 +257,36 @@ const function sortImportLines(a: string, b: string): boolean
 	return #a > #b
 end
 
+const function getFirstEntryLine(entries): number?
+	local lineNumber: number? = nil
+	for _, entry in entries do
+		if lineNumber == nil or entry.lineNumber < lineNumber then
+			lineNumber = entry.lineNumber
+		end
+	end
+
+	return lineNumber
+end
+
+const function getCommentInsertLine(lines: { string }, comments: { Types.Comment }, needle: string): number?
+	for _, comment in comments do
+		const text = string.lower(comment.text)
+		if string.find(text, needle, 1, true) ~= nil then
+			local lineNumber = comment.range["end"].line + 1
+			while lines[lineNumber] ~= nil and isNonBlankLine(lines[lineNumber]) == false do
+				lineNumber += 1
+			end
+			return lineNumber
+		end
+	end
+
+	return nil
+end
+
 const function organizeImports(
 	lines: { string },
 	lastCommentLine: number,
+	comments: { Types.Comment },
 	requires: Types.Requires,
 	acquires: Types.ServiceAcquisitions,
 	newAcquire: string?,
@@ -305,52 +333,48 @@ const function organizeImports(
 	table.sort(serviceLines, sortImportLines)
 	table.sort(requireLines, sortImportLines)
 
-	const organizedLines = {}
-	local removedImportSinceLastLine = false
-	for lineNumber, line in lines do
-		if importLineNumbers[lineNumber] ~= true then
-			if
-				isNonBlankLine(line) == false
-				and removedImportSinceLastLine == true
-				and isNonBlankLine(organizedLines[#organizedLines]) == false
-			then
-				continue
-			end
+	local serviceInsertLine = getFirstEntryLine(acquires.entries)
+	local requireInsertLine = getFirstEntryLine(requires.entries)
+	if serviceInsertLine == nil and newAcquire ~= nil then
+		serviceInsertLine = getCommentInsertLine(lines, comments, "service") or requireInsertLine or lastCommentLine + 1
+	end
+	if requireInsertLine == nil and newRequire ~= nil then
+		requireInsertLine = getCommentInsertLine(lines, comments, "module")
+			or getCommentInsertLine(lines, comments, "require")
+			or lastCommentLine + 1
+	end
 
+	const organizedLines = {}
+	local serviceWritten = false
+	local requireWritten = false
+	for lineNumber, line in lines do
+		if lineNumber == serviceInsertLine and not serviceWritten then
+			for _, serviceLine in serviceLines do
+				table.insert(organizedLines, serviceLine)
+			end
+			serviceWritten = true
+		end
+		if lineNumber == requireInsertLine and not requireWritten then
+			for _, requireLine in requireLines do
+				table.insert(organizedLines, requireLine)
+			end
+			requireWritten = true
+		end
+
+		if importLineNumbers[lineNumber] ~= true then
 			table.insert(organizedLines, line)
-			removedImportSinceLastLine = false
-		else
-			removedImportSinceLastLine = true
 		end
 	end
 
-	local writeLine = lastCommentLine + 1
-	while organizedLines[writeLine] ~= nil and isNonBlankLine(organizedLines[writeLine]) == false do
-		table.remove(organizedLines, writeLine)
+	if not serviceWritten then
+		for _, serviceLine in serviceLines do
+			table.insert(organizedLines, serviceLine)
+		end
 	end
-
-	if lastCommentLine > 0 then
-		table.insert(organizedLines, writeLine, "")
-		writeLine += 1
-	end
-
-	for _, line in serviceLines do
-		table.insert(organizedLines, writeLine, line)
-		writeLine += 1
-	end
-
-	if #serviceLines > 0 and #requireLines > 0 then
-		table.insert(organizedLines, writeLine, "")
-		writeLine += 1
-	end
-
-	for _, line in requireLines do
-		table.insert(organizedLines, writeLine, line)
-		writeLine += 1
-	end
-
-	if #serviceLines > 0 or #requireLines > 0 then
-		table.insert(organizedLines, writeLine, "")
+	if not requireWritten then
+		for _, requireLine in requireLines do
+			table.insert(organizedLines, requireLine)
+		end
 	end
 
 	return organizedLines
@@ -359,7 +383,11 @@ end
 const toolbar = plugin:CreateToolbar("ivad's Auto Import")
 const settingsButton = toolbar:CreateButton("Settings", "ivad's Auto Import Settings", SETTINGS_ICON)
 const settingsStore = Settings.create(plugin)
+local connections: { RBXScriptConnection } = {}
 local settingsWindow = nil
+local bootstrapQueued = false
+local unloading = false
+local lastAutocompleteError = ""
 
 settingsButton.Click:Connect(function()
 	if settingsWindow == nil then
@@ -425,7 +453,7 @@ const function getRelativePath(origin: Instance, target: Instance): string?
 	return table.concat(parts, "/")
 end
 
-const callback: Types.AutocompleteCallback = function(request, response)
+const autocomplete: Types.AutocompleteCallback = function(request, response)
 	const settings = settingsStore.get()
 	if not settings.enabled then
 		return response
@@ -461,54 +489,56 @@ const callback: Types.AutocompleteCallback = function(request, response)
 
 	const trigger = triggerText
 
-	-- we dont have to parse the whole file, just the slice
-	-- parser can handle a long comment/string being cut short by the slice (error tolerance)
-	-- get lexemes from slice (before we removed trigger) as we need to look at it
-	const lexemes = parseScript(slice)
+	const guardLexemes = parseScript(slice)
 
-	for _, comment in lexemes.comments do
+	for _, comment in guardLexemes.comments do
 		if isInComment(position, comment) then
 			return response
 		end
 	end
-	for _, str in lexemes.strings do
+	for _, str in guardLexemes.strings do
 		if isInString(position, str) then
 			return response
 		end
 	end
 
-	const patch = origin.document:GetText(1, 1, position.line, position.character - #trigger - #settings.prefix)
+	const patchLines = string.split(slice, "\n")
+	const line = patchLines[position.line]
+	const triggerStartCharacter = position.character - #trigger - #settings.prefix
+	if line == nil or triggerStartCharacter < 1 then
+		return response
+	end
+
 	const patchRange = {
 		start = { line = 1, character = 1 },
 		["end"] = {
 			line = position.line,
-			character = position.character -- we want to replace up to cursor?
-			-- Wait, `textEdit.replace` range.
-			-- If we insert `local X = ...`, we want to maintain the rest of the file?
-			-- Original code: `replace = patchRange`.
-			-- `patchRange` end was `position`.
-			-- This replaced everything from 1,1 to Cursor with `newLines` + `identifier`.
-			-- `newLines` is reconstructed file content up to that point.
-			-- So it replaces the whole top of the file up to cursor.
-			-- If we triggered on `:Name`, we want to replace `:Name` with `Name` (identifier) and add import at top.
-			-- So `patchRange` end is correct (cursor).
-			-- But `patch` variable (used to calculate lines) needs to NOT include `:Name`.
+			character = position.character,
 		},
 	}
 
-	const lines = string.split(patch, "\n")
+	patchLines[position.line] = string.sub(line, 1, triggerStartCharacter - 1)
+	const patchSource = table.concat(patchLines, "\n")
+	const patchLexemes = parseScript(patchSource)
 
 	local lastCommentLine = 0
-	for _, comment in lexemes.comments do
+	for _, comment in patchLexemes.comments do
 		if comment.header == true then
 			lastCommentLine = comment.range["end"].line
 		end
 	end
 
-	const requires = getRequires(patch)
-	const acquires = getServiceAcquisitions(patch)
+	const requires = getRequires(patchSource)
+	const acquires = getServiceAcquisitions(patchSource)
 
 	const items = table.clone(response.items)
+
+	const function getNewText(identifier: string, acquireSource: string?, requireSource: string?): string
+		const lines = table.clone(patchLines)
+		lines[position.line] = string.sub(line, 1, triggerStartCharacter - 1) .. identifier
+		const newLines = organizeImports(lines, lastCommentLine, patchLexemes.comments, requires, acquires, acquireSource, requireSource)
+		return table.concat(newLines, "\n")
+	end
 
 	for _, module in getModules(origin.script, settings) do
 		const identifier = getModuleIdentifier(module)
@@ -539,7 +569,6 @@ const callback: Types.AutocompleteCallback = function(request, response)
 		end
 
 		const requireSource = `{settings.keyword} {identifier} = require({requirePath})`
-		const newLines = organizeImports(lines, lastCommentLine, requires, acquires, acquireSource, requireSource)
 
 		table.insert(items, {
 			label = module.Name,
@@ -547,7 +576,8 @@ const callback: Types.AutocompleteCallback = function(request, response)
 			documentation = { value = "Auto-require" },
 			detail = module:GetFullName(),
 			textEdit = {
-				newText = table.concat(newLines, "\n") .. identifier,
+				newText = getNewText(identifier, acquireSource, requireSource),
+				insert = patchRange,
 				replace = patchRange,
 			},
 		})
@@ -563,7 +593,6 @@ const callback: Types.AutocompleteCallback = function(request, response)
 			end
 
 			const acquireSource = `{settings.keyword} {identifier} = game:GetService("{identifier}")`
-			const newLines = organizeImports(lines, lastCommentLine, requires, acquires, acquireSource, nil)
 
 			table.insert(items, {
 				label = identifier,
@@ -572,7 +601,8 @@ const callback: Types.AutocompleteCallback = function(request, response)
 				detail = "Service",
 				learnMoreLink = `https://create.roblox.com/docs/reference/engine/classes/{identifier}`,
 				textEdit = {
-					newText = table.concat(newLines, "\n") .. identifier,
+					newText = getNewText(identifier, acquireSource, nil),
+					insert = patchRange,
 					replace = patchRange,
 				},
 			})
@@ -585,7 +615,6 @@ const callback: Types.AutocompleteCallback = function(request, response)
 			seenServices[identifier] = true
 
 			const acquireSource = `{settings.keyword} {identifier} = game:GetService("{identifier}")`
-			const newLines = organizeImports(lines, lastCommentLine, requires, acquires, acquireSource, nil)
 
 			table.insert(items, {
 				label = identifier,
@@ -593,7 +622,8 @@ const callback: Types.AutocompleteCallback = function(request, response)
 				documentation = { value = "Auto-service" },
 				detail = "Additional Service",
 				textEdit = {
-					newText = table.concat(newLines, "\n") .. identifier,
+					newText = getNewText(identifier, acquireSource, nil),
+					insert = patchRange,
 					replace = patchRange,
 				},
 			})
@@ -605,10 +635,74 @@ const callback: Types.AutocompleteCallback = function(request, response)
 	}
 end
 
-ScriptEditorService:RegisterAutocompleteCallback(CALLBACK_ID, 1, callback)
+const function deregisterAutocomplete()
+	pcall(function()
+		ScriptEditorService:DeregisterAutocompleteCallback(CALLBACK_ID)
+	end)
+end
+
+const function queueAutocompleteBootstrap()
+	if unloading or bootstrapQueued then
+		return
+	end
+
+	bootstrapQueued = true
+	task.delay(BOOTSTRAP_DELAY, function()
+		bootstrapQueued = false
+		if unloading then
+			return
+		end
+
+		deregisterAutocomplete()
+
+		const registered = pcall(function()
+			ScriptEditorService:RegisterAutocompleteCallback(CALLBACK_ID, 1, function(request, response)
+				const ok, result = pcall(autocomplete, request, response)
+				if ok then
+					return result
+				end
+
+				const message = tostring(result)
+				if message ~= lastAutocompleteError then
+					lastAutocompleteError = message
+					warn(`ivad's Auto Import autocomplete recovered: {message}`)
+				end
+				queueAutocompleteBootstrap()
+				return response
+			end)
+		end)
+
+		if not registered then
+			queueAutocompleteBootstrap()
+		end
+	end)
+end
+
+queueAutocompleteBootstrap()
+
+table.insert(connections, settingsStore.changed:Connect(queueAutocompleteBootstrap))
+table.insert(connections, ScriptEditorService.TextDocumentDidOpen:Connect(queueAutocompleteBootstrap))
+table.insert(connections, ScriptEditorService.TextDocumentDidClose:Connect(queueAutocompleteBootstrap))
+
+for _, service in moduleServices do
+	table.insert(connections, service.DescendantAdded:Connect(function(instance)
+		if instance:IsA("ModuleScript") then
+			queueAutocompleteBootstrap()
+		end
+	end))
+	table.insert(connections, service.DescendantRemoving:Connect(function(instance)
+		if instance:IsA("ModuleScript") then
+			queueAutocompleteBootstrap()
+		end
+	end))
+end
 
 plugin.Unloading:Connect(function()
-	ScriptEditorService:DeregisterAutocompleteCallback(CALLBACK_ID)
+	unloading = true
+	for _, connection in connections do
+		connection:Disconnect()
+	end
+	deregisterAutocomplete()
 	if settingsWindow ~= nil then
 		settingsWindow.destroy()
 	end
