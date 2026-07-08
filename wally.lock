@@ -8,6 +8,6 @@ version = "0.4.0"
 dependencies = []
 
 [[package]]
-name = "ivadsiuls/autoimport"
+name = "ivadsiuls/codekit"
 version = "1.0.0"
 dependencies = [["vide", "centau/vide@0.4.0"]]

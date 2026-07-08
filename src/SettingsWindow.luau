@@ -28,7 +28,7 @@ type Store = {
 	destroy: () -> (),
 }
 
-const WIDGET_ID = "sircfenner-auto-import-settings"
+const WIDGET_ID = "codekit-settings"
 
 const function parseList(text: string): { string }
 	local names = {}
@@ -52,19 +52,22 @@ const function createWindow(plugin: Plugin, store: Store)
 		360
 	)
 	const widget = plugin:CreateDockWidgetPluginGui(WIDGET_ID, widgetInfo)
-	widget.Name = "ivad's Auto Import Settings"
-	widget.Title = "ivad's Auto Import Settings"
+	widget.Name = "CodeKit Settings"
+	widget.Title = "CodeKit Settings"
 
 	local additionalServicesBox: TextBox
 	local clientDirectoriesBox: TextBox
 	local prefixBox: TextBox
 	local namesBox: TextBox
 	local enabledToggle
+	local autoModulesToggle
 	local autoServicesToggle
 	local overrideWorkspaceToggle
 	local stringRequiresToggle
+	local semicolonsToggle
 	local modeDropdown
 	local keywordDropdown
+	local importSortDropdown
 	local generalSection
 	local requiresSection
 	local servicesSection
@@ -121,7 +124,7 @@ const function createWindow(plugin: Plugin, store: Store)
 					Name = "Title",
 					Size = UDim2.new(1, 0, 0, 34),
 					TextXAlignment = Enum.TextXAlignment.Left,
-					Text = "  ivad's Auto Import",
+					Text = "  CodeKit",
 					Font = Enum.Font.SourceSansSemibold,
 					TextSize = 20,
 					TextColor3 = Theme.TEXT,
@@ -155,11 +158,13 @@ const function createWindow(plugin: Plugin, store: Store)
 						const globalTab = TabButton(tabs, "GLOBAL", function()
 							modeDropdown.close()
 							keywordDropdown.close()
+							importSortDropdown.close()
 							activeScope("global")
 						end)
 						const workspaceTab = TabButton(tabs, "WORKSPACE", function()
 							modeDropdown.close()
 							keywordDropdown.close()
+							importSortDropdown.close()
 							store.refreshWorkspace()
 							activeScope("workspace")
 						end)
@@ -178,17 +183,21 @@ const function createWindow(plugin: Plugin, store: Store)
 					BorderSizePixel = 0,
 				}),
 				vide.action(function(content)
-					generalSection = Section(content, "General", Theme.ROW_HEIGHT * 3)
+					generalSection = Section(content, "General", Theme.ROW_HEIGHT * 4)
 					enabledToggle = ToggleSetting(generalSection.body, "Enabled", 1, function()
 						const settings = currentSettings()
 						store.update(activeScope(), "enabled", not settings.enabled)
 					end)
-					autoServicesToggle = ToggleSetting(generalSection.body, "Auto Services", 2, function()
+					autoModulesToggle = ToggleSetting(generalSection.body, "Auto Modules", 2, function()
+						const settings = currentSettings()
+						store.update(activeScope(), "autoModules", not settings.autoModules)
+					end)
+					autoServicesToggle = ToggleSetting(generalSection.body, "Auto Services", 3, function()
 						const settings = currentSettings()
 						store.update(activeScope(), "autoServices", not settings.autoServices)
 					end)
 
-					overrideWorkspaceToggle = ToggleSetting(generalSection.body, "Override Workspace Settings", 3, function()
+					overrideWorkspaceToggle = ToggleSetting(generalSection.body, "Override Workspace Settings", 4, function()
 						if activeScope() ~= "global" then
 							return
 						end
@@ -196,33 +205,61 @@ const function createWindow(plugin: Plugin, store: Store)
 						store.update("global", "overrideWorkspaceSettings", not settings.overrideWorkspaceSettings)
 					end)
 
-					requiresSection = Section(content, "Requires", Theme.ROW_HEIGHT * 4)
+					requiresSection = Section(content, "Requires", Theme.ROW_HEIGHT * 6)
 					stringRequiresToggle = ToggleSetting(requiresSection.body, "String Requires", 1, function()
 						const settings = currentSettings()
 						store.update(activeScope(), "stringRequires", not settings.stringRequires)
 					end)
+					semicolonsToggle = ToggleSetting(requiresSection.body, "Semicolons", 2, function()
+						const settings = currentSettings()
+						store.update(activeScope(), "semicolons", not settings.semicolons)
+					end)
 
 					local function updateRequiresHeight()
-						local height = Theme.ROW_HEIGHT * 4
+						local height = Theme.ROW_HEIGHT * 6
 						if modeDropdown ~= nil and modeDropdown.isOpen() then
 							height += modeDropdown.getOpenHeight()
 						end
 						if keywordDropdown ~= nil and keywordDropdown.isOpen() then
 							height += keywordDropdown.getOpenHeight()
 						end
+						if importSortDropdown ~= nil and importSortDropdown.isOpen() then
+							height += importSortDropdown.getOpenHeight()
+						end
 						requiresSection.setHeight(height)
 					end
 
-					modeDropdown = DropdownSetting(requiresSection.body, "Require Mode", 2, { "local", "global" }, function(value)
+					modeDropdown = DropdownSetting(requiresSection.body, "Require Mode", 3, { "local", "global" }, function(value)
 						store.update(activeScope(), "requireMode", value)
 					end, updateRequiresHeight)
-					keywordDropdown = DropdownSetting(requiresSection.body, "Keyword", 3, { "local", "const" }, function(value)
+					keywordDropdown = DropdownSetting(requiresSection.body, "Keyword", 4, { "local", "const" }, function(value)
 						store.update(activeScope(), "keyword", value)
 					end, updateRequiresHeight)
+					importSortDropdown = DropdownSetting(
+						requiresSection.body,
+						"Import Sort",
+						5,
+						{
+							"longestFirst",
+							"longestLast",
+							"alphabetical",
+							"reverseAlphabetical",
+							"constantsFirst",
+							"localsFirst",
+							"pathFirst",
+							"pathLast",
+							"identifierFirst",
+							"identifierLast",
+						},
+						function(value)
+							store.update(activeScope(), "importSort", value)
+						end,
+						updateRequiresHeight
+					)
 					prefixBox = TextBoxSetting({
 						parent = requiresSection.body,
 						name = "Prefix",
-						index = 4,
+						index = 6,
 						focusLost = function()
 							store.update(activeScope(), "prefix", prefixBox.Text)
 						end,
@@ -264,7 +301,7 @@ const function createWindow(plugin: Plugin, store: Store)
 					effect(function()
 						const isGlobal = activeScope() == "global"
 						overrideWorkspaceToggle.row.Size = UDim2.new(1, 0, 0, if isGlobal then Theme.ROW_HEIGHT else 0)
-						generalSection.setHeight(if isGlobal then Theme.ROW_HEIGHT * 3 else Theme.ROW_HEIGHT * 2)
+						generalSection.setHeight(if isGlobal then Theme.ROW_HEIGHT * 4 else Theme.ROW_HEIGHT * 3)
 					end)
 				end),
 			}),
@@ -290,6 +327,7 @@ const function createWindow(plugin: Plugin, store: Store)
 					FooterButton(footer, "Reset", false, function()
 						modeDropdown.close()
 						keywordDropdown.close()
+						importSortDropdown.close()
 						store.reset(activeScope())
 					end)
 					FooterButton(footer, "Done", true, function()
@@ -304,11 +342,14 @@ const function createWindow(plugin: Plugin, store: Store)
 			const settings = if activeScope() == "global" then store.getGlobal() else store.getWorkspace()
 			currentSettings(settings)
 			enabledToggle.set(settings.enabled)
+			autoModulesToggle.set(settings.autoModules)
 			autoServicesToggle.set(settings.autoServices)
 			overrideWorkspaceToggle.set(settings.overrideWorkspaceSettings)
 			stringRequiresToggle.set(settings.stringRequires)
+			semicolonsToggle.set(settings.semicolons)
 			modeDropdown.text(settings.requireMode)
 			keywordDropdown.text(settings.keyword)
+			importSortDropdown.text(settings.importSort)
 			if not additionalServicesBox:IsFocused() then
 				additionalServicesBox.Text = table.concat(settings.additionalServices, ", ")
 			end

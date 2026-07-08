@@ -82,14 +82,27 @@ export type AutocompleteCallback = (
 
 export type RequireMode = "local" | "global"
 export type Keyword = "local" | "const"
+export type ImportSort = "longestFirst"
+	| "longestLast"
+	| "alphabetical"
+	| "reverseAlphabetical"
+	| "constantsFirst"
+	| "localsFirst"
+	| "pathFirst"
+	| "pathLast"
+	| "identifierFirst"
+	| "identifierLast"
 
 export type Settings = {
 	enabled: boolean,
+	autoModules: boolean,
 	stringRequires: boolean,
 	requireMode: RequireMode,
 	keyword: Keyword,
 	prefix: string,
 	autoServices: boolean,
+	semicolons: boolean,
+	importSort: ImportSort,
 	additionalServices: { string },
 	clientDirectories: { string },
 	ignoredNames: { string },

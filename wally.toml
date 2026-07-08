@@ -1,6 +1,6 @@
 [package]
-name = "ivadsiuls/autoimport"
-description = "ivad's Auto Import plugin"
+name = "ivadsiuls/codekit"
+description = "a roblox coding toolkit with everything you need to get started"
 version = "1.0.0"
 license = "MIT"
 realm = "shared"

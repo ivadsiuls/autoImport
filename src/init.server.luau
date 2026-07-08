@@ -249,12 +249,82 @@ const function isNonBlankLine(text: string?)
 	return text == nil or string.match(text, "%S") ~= nil
 end
 
-const function sortImportLines(a: string, b: string): boolean
+const function getImportIdentifier(line: string): string
+	return string.match(line, `^%s*%a+%s+({PAT_IDENT})%s*=`) or line
+end
+
+const function getImportPath(line: string): string
+	return string.match(line, "require%s*%((.+)%)") or string.match(line, "GetService%s*%((.+)%)") or line
+end
+
+const function getImportGroup(line: string, importSort: Types.ImportSort): number
+	const isConst = string.match(line, "^%s*const%s+") ~= nil
+	if importSort == "constantsFirst" then
+		return if isConst then 0 else 1
+	elseif importSort == "localsFirst" then
+		return if isConst then 1 else 0
+	end
+	return 0
+end
+
+const function sortImportLines(a: string, b: string, importSort: Types.ImportSort): boolean
+	if importSort == "alphabetical" then
+		return a < b
+	elseif importSort == "reverseAlphabetical" then
+		return a > b
+	elseif importSort == "longestLast" then
+		if #a == #b then
+			return a < b
+		end
+		return #a < #b
+	elseif importSort == "pathFirst" then
+		const pathA = getImportPath(a)
+		const pathB = getImportPath(b)
+		if pathA == pathB then
+			return a < b
+		end
+		return pathA < pathB
+	elseif importSort == "pathLast" then
+		const pathA = getImportPath(a)
+		const pathB = getImportPath(b)
+		if pathA == pathB then
+			return a < b
+		end
+		return pathA > pathB
+	elseif importSort == "identifierFirst" then
+		const identifierA = getImportIdentifier(a)
+		const identifierB = getImportIdentifier(b)
+		if identifierA == identifierB then
+			return a < b
+		end
+		return identifierA < identifierB
+	elseif importSort == "identifierLast" then
+		const identifierA = getImportIdentifier(a)
+		const identifierB = getImportIdentifier(b)
+		if identifierA == identifierB then
+			return a < b
+		end
+		return identifierA > identifierB
+	end
+
+	const groupA = getImportGroup(a, importSort)
+	const groupB = getImportGroup(b, importSort)
+	if groupA ~= groupB then
+		return groupA < groupB
+	end
+
 	if #a == #b then
 		return a < b
 	end
 
 	return #a > #b
+end
+
+const function finishStatement(source: string, settings: Types.Settings): string
+	if settings.semicolons then
+		return `{source};`
+	end
+	return source
 end
 
 const function getFirstEntryLine(entries): number?
@@ -290,7 +360,8 @@ const function organizeImports(
 	requires: Types.Requires,
 	acquires: Types.ServiceAcquisitions,
 	newAcquire: string?,
-	newRequire: string?
+	newRequire: string?,
+	settings: Types.Settings
 ): { string }
 	const serviceLines = {}
 	const requireLines = {}
@@ -330,8 +401,12 @@ const function organizeImports(
 		table.insert(requireLines, newRequire)
 	end
 
-	table.sort(serviceLines, sortImportLines)
-	table.sort(requireLines, sortImportLines)
+	table.sort(serviceLines, function(a, b)
+		return sortImportLines(a, b, settings.importSort)
+	end)
+	table.sort(requireLines, function(a, b)
+		return sortImportLines(a, b, settings.importSort)
+	end)
 
 	local serviceInsertLine = getFirstEntryLine(acquires.entries)
 	local requireInsertLine = getFirstEntryLine(requires.entries)
@@ -380,8 +455,8 @@ const function organizeImports(
 	return organizedLines
 end
 
-const toolbar = plugin:CreateToolbar("ivad's Auto Import")
-const settingsButton = toolbar:CreateButton("Settings", "ivad's Auto Import Settings", SETTINGS_ICON)
+const toolbar = plugin:CreateToolbar("CodeKit")
+const settingsButton = toolbar:CreateButton("Settings", "CodeKit Settings", SETTINGS_ICON)
 const settingsStore = Settings.create(plugin)
 local connections: { RBXScriptConnection } = {}
 local settingsWindow = nil
@@ -536,51 +611,65 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 	const function getNewText(identifier: string, acquireSource: string?, requireSource: string?): string
 		const lines = table.clone(patchLines)
 		lines[position.line] = string.sub(line, 1, triggerStartCharacter - 1) .. identifier
-		const newLines = organizeImports(lines, lastCommentLine, patchLexemes.comments, requires, acquires, acquireSource, requireSource)
+		const newLines = organizeImports(
+			lines,
+			lastCommentLine,
+			patchLexemes.comments,
+			requires,
+			acquires,
+			acquireSource,
+			requireSource,
+			settings
+		)
 		return table.concat(newLines, "\n")
 	end
 
-	for _, module in getModules(origin.script, settings) do
-		const identifier = getModuleIdentifier(module)
-		if requires.byIdentifier[identifier] ~= nil then
-			continue
-		end
-
-		const service, path = getModuleProvenance(module)
-
-		local serviceIdentifier = service.Name
-		local acquireSource: string? = nil
-		local requirePath = ""
-		if settings.requireMode == "local" then
-			if settings.stringRequires then
-				requirePath = string.format("%q", getRelativePath(origin.script, module))
-			else
-				requirePath = getLocalPathExpression(origin.script, module)
+	if settings.autoModules then
+		for _, module in getModules(origin.script, settings) do
+			const identifier = getModuleIdentifier(module)
+			if requires.byIdentifier[identifier] ~= nil then
+				continue
 			end
-		elseif settings.stringRequires then
-			requirePath = string.format("%q", getGlobalStringPath(service, module))
-		else
-			if acquires.byServiceName[serviceIdentifier] ~= nil then
-				serviceIdentifier = acquires.byServiceName[serviceIdentifier].identifier
+
+			const service, path = getModuleProvenance(module)
+
+			local serviceIdentifier = service.Name
+			local acquireSource: string? = nil
+			local requirePath = ""
+			if settings.requireMode == "local" then
+				if settings.stringRequires then
+					requirePath = string.format("%q", getRelativePath(origin.script, module))
+				else
+					requirePath = getLocalPathExpression(origin.script, module)
+				end
+			elseif settings.stringRequires then
+				requirePath = string.format("%q", getGlobalStringPath(service, module))
 			else
-				acquireSource = `{settings.keyword} {serviceIdentifier} = game:GetService("{serviceIdentifier}")`
+				if acquires.byServiceName[serviceIdentifier] ~= nil then
+					serviceIdentifier = acquires.byServiceName[serviceIdentifier].identifier
+				else
+					acquireSource = finishStatement(
+						`{settings.keyword} {serviceIdentifier} = game:GetService("{serviceIdentifier}")`,
+						settings
+					)
+				end
+				requirePath = `{serviceIdentifier}{path}`
 			end
-			requirePath = `{serviceIdentifier}{path}`
+
+			const requireSource = finishStatement(`{settings.keyword} {identifier} = require({requirePath})`, settings)
+
+			table.insert(items, {
+				label = module.Name,
+				kind = Enum.CompletionItemKind.Snippet,
+				documentation = { value = "Auto-require" },
+				detail = module:GetFullName(),
+				textEdit = {
+					newText = getNewText(identifier, acquireSource, requireSource),
+					insert = patchRange,
+					replace = patchRange,
+				},
+			})
 		end
-
-		const requireSource = `{settings.keyword} {identifier} = require({requirePath})`
-
-		table.insert(items, {
-			label = module.Name,
-			kind = Enum.CompletionItemKind.Snippet,
-			documentation = { value = "Auto-require" },
-			detail = module:GetFullName(),
-			textEdit = {
-				newText = getNewText(identifier, acquireSource, requireSource),
-				insert = patchRange,
-				replace = patchRange,
-			},
-		})
 	end
 
 	if settings.autoServices then
@@ -592,7 +681,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 				continue
 			end
 
-			const acquireSource = `{settings.keyword} {identifier} = game:GetService("{identifier}")`
+			const acquireSource = finishStatement(`{settings.keyword} {identifier} = game:GetService("{identifier}")`, settings)
 
 			table.insert(items, {
 				label = identifier,
@@ -614,7 +703,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			end
 			seenServices[identifier] = true
 
-			const acquireSource = `{settings.keyword} {identifier} = game:GetService("{identifier}")`
+			const acquireSource = finishStatement(`{settings.keyword} {identifier} = game:GetService("{identifier}")`, settings)
 
 			table.insert(items, {
 				label = identifier,
@@ -665,7 +754,7 @@ const function queueAutocompleteBootstrap()
 				const message = tostring(result)
 				if message ~= lastAutocompleteError then
 					lastAutocompleteError = message
-					warn(`ivad's Auto Import autocomplete recovered: {message}`)
+					warn(`CodeKit autocomplete recovered: {message}`)
 				end
 				queueAutocompleteBootstrap()
 				return response

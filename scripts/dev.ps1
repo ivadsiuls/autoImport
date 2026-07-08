@@ -22,7 +22,7 @@ try {
 		exit $LASTEXITCODE
 	}
 
-	& $rojo build --plugin build/import-plugin-dev.rbxm --watch default.project.json
+	& $rojo build --plugin build/codekit-plugin-dev.rbxm --watch default.project.json
 	exit $LASTEXITCODE
 } finally {
 	Pop-Location
