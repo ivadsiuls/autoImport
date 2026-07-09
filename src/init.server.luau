@@ -120,6 +120,36 @@ const function getGlobalStringPath(service: Instance, module: ModuleScript): str
 	return `@game/{table.concat(segments, "/")}`
 end
 
+const function getImportIdentifierFromInstance(instance: Instance): string
+	local name = instance.Name
+	if isSafeIdentifier(name) then
+		return name
+	end
+
+	name = string.gsub(name, "[^_%w]", "")
+	if #name == 0 then
+		name = "_"
+	elseif string.match(string.sub(name, 1, 1), "[^_%a]") then
+		name = `_{name}`
+	end
+	return name
+end
+
+const function getPathSegmentExpression(name: string): string
+	if isSafeIdentifier(name) then
+		return `.{name}`
+	end
+	return string.format("[%q]", name)
+end
+
+const function getDataModelRoot(instance: Instance): Instance?
+	local current: Instance = instance
+	while current.Parent ~= nil and current.Parent ~= game do
+		current = current.Parent :: Instance
+	end
+	return if current.Parent == game then current else nil
+end
+
 const function escapePattern(text: string): string
 	return string.gsub(text, "([^%w])", "%%%1")
 end
@@ -332,6 +362,55 @@ const function finishStatement(source: string, settings: Types.Settings): string
 	return source
 end
 
+const function getFolderDepthLimit(settings: Types.Settings): number
+	if settings.importFolderDepth == "All" then
+		return math.huge
+	elseif settings.importFolderDepth == "First Two" then
+		return 2
+	end
+	return 1
+end
+
+const function getFolderImports(root: Instance, target: Instance, rootIdentifier: string, settings: Types.Settings)
+	if not settings.autoFolders then
+		return {}, rootIdentifier
+	end
+
+	const parent = target.Parent
+	if parent == nil or parent == root then
+		return {}, rootIdentifier
+	end
+
+	const folders = {}
+	local current: Instance = parent
+	while current ~= root do
+		if current:IsA("Folder") then
+			table.insert(folders, 1, current)
+		end
+		current = current.Parent :: Instance
+	end
+
+	const folderLines = {}
+	local expression = rootIdentifier
+	const depthLimit = getFolderDepthLimit(settings)
+	for index, folder in folders do
+		if index > depthLimit then
+			break
+		end
+
+		const identifier = getImportIdentifierFromInstance(folder)
+		expression ..= getPathSegmentExpression(folder.Name)
+		table.insert(folderLines, finishStatement(`{settings.keyword} {identifier} = {expression}`, settings))
+		expression = identifier
+	end
+
+	for index = math.min(#folders, depthLimit) + 1, #folders do
+		expression ..= getPathSegmentExpression(folders[index].Name)
+	end
+
+	return folderLines, expression
+end
+
 const function expandSnippet(source: string, origin: LuaSourceContainer, trigger: string): string
 	local expanded = source
 	expanded = string.gsub(expanded, "%${scriptName}", origin.Name)
@@ -373,6 +452,69 @@ const function getCommentInsertLine(lines: { string }, comments: { Types.Comment
 	return nil
 end
 
+const IMPORT_TOKENS = {
+	["[services]"] = true,
+	["[modules]"] = true,
+	["[folders]"] = true,
+	["[remotes]"] = true,
+}
+
+const function getLayoutGroups(layout: string)
+	const groups = {}
+	local pendingLines = {}
+
+	for _, layoutLine in string.split(layout, "\n") do
+		const trimmed = string.gsub(layoutLine, "^%s*(.-)%s*$", "%1")
+		if IMPORT_TOKENS[trimmed] == true then
+			table.insert(groups, {
+				token = trimmed,
+				prefix = pendingLines,
+			})
+			pendingLines = {}
+		else
+			table.insert(pendingLines, layoutLine)
+		end
+	end
+
+	return groups
+end
+
+const function getManagedImportLines(settings: Types.Settings)
+	const managed = {}
+	for _, group in getLayoutGroups(settings.importLayout) do
+		managed[group.token] = true
+		for _, line in group.prefix do
+			if line ~= "" then
+				managed[line] = true
+			end
+		end
+	end
+	return managed
+end
+
+const function appendTrimmedGroup(importBlock: { string }, prefix: { string }, bucket: { string })
+	if #bucket == 0 then
+		return
+	end
+
+	while #prefix > 0 and prefix[1] == "" do
+		table.remove(prefix, 1)
+	end
+	while #prefix > 0 and prefix[#prefix] == "" do
+		table.remove(prefix, #prefix)
+	end
+
+	if #importBlock > 0 then
+		table.insert(importBlock, "")
+	end
+	for _, line in prefix do
+		table.insert(importBlock, line)
+	end
+	for _, line in bucket do
+		table.insert(importBlock, line)
+	end
+end
+
 const function organizeImports(
 	lines: { string },
 	lastCommentLine: number,
@@ -381,11 +523,16 @@ const function organizeImports(
 	acquires: Types.ServiceAcquisitions,
 	newAcquire: string?,
 	newRequire: string?,
+	newFolderLines: { string }?,
+	newRemote: string?,
 	settings: Types.Settings
 ): { string }
 	const serviceLines = {}
 	const requireLines = {}
+	const folderLines = {}
+	const remoteLines = {}
 	const importLineNumbers = {}
+	const managedImportLines = getManagedImportLines(settings)
 
 	const seenServices = {}
 	for _, entry in acquires.entries do
@@ -420,6 +567,14 @@ const function organizeImports(
 	if newRequire ~= nil then
 		table.insert(requireLines, newRequire)
 	end
+	if newFolderLines ~= nil then
+		for _, folderLine in newFolderLines do
+			table.insert(folderLines, folderLine)
+		end
+	end
+	if newRemote ~= nil then
+		table.insert(remoteLines, newRemote)
+	end
 
 	table.sort(serviceLines, function(a, b)
 		return sortImportLines(a, b, settings.importSort)
@@ -427,48 +582,96 @@ const function organizeImports(
 	table.sort(requireLines, function(a, b)
 		return sortImportLines(a, b, settings.importSort)
 	end)
+	table.sort(folderLines, function(a, b)
+		return sortImportLines(a, b, settings.importSort)
+	end)
+	table.sort(remoteLines, function(a, b)
+		return sortImportLines(a, b, settings.importSort)
+	end)
 
-	local serviceInsertLine = getFirstEntryLine(acquires.entries)
-	local requireInsertLine = getFirstEntryLine(requires.entries)
-	if serviceInsertLine == nil and newAcquire ~= nil then
-		serviceInsertLine = getCommentInsertLine(lines, comments, "service") or requireInsertLine or lastCommentLine + 1
-	end
-	if requireInsertLine == nil and newRequire ~= nil then
-		requireInsertLine = getCommentInsertLine(lines, comments, "module")
-			or getCommentInsertLine(lines, comments, "require")
-			or lastCommentLine + 1
+	const tokenLines = {
+		["[services]"] = serviceLines,
+		["[modules]"] = requireLines,
+		["[folders]"] = folderLines,
+		["[remotes]"] = remoteLines,
+	}
+	local wroteToken = {}
+	const importBlock = {}
+
+	for _, group in getLayoutGroups(settings.importLayout) do
+		wroteToken[group.token] = true
+		appendTrimmedGroup(importBlock, table.clone(group.prefix), tokenLines[group.token])
 	end
 
-	const organizedLines = {}
-	local serviceWritten = false
-	local requireWritten = false
+	for token, bucket in tokenLines do
+		if wroteToken[token] then
+			continue
+		end
+		for _, importLine in bucket do
+			table.insert(importBlock, importLine)
+		end
+	end
+
+	while #importBlock > 0 and importBlock[1] == "" do
+		table.remove(importBlock, 1)
+	end
+	while #importBlock > 0 and importBlock[#importBlock] == "" do
+		table.remove(importBlock, #importBlock)
+	end
+
+	const function isManagedLine(lineNumber: number, line: string): boolean
+		const trimmed = string.gsub(line, "^%s*(.-)%s*$", "%1")
+		return importLineNumbers[lineNumber] == true or managedImportLines[line] == true or IMPORT_TOKENS[trimmed] == true
+	end
+
+	local organizedLines = {}
+	local insertedImportBlock = #importBlock == 0
+	local pendingBlank = false
+
+	organizedLines = {}
 	for lineNumber, line in lines do
-		if lineNumber == serviceInsertLine and not serviceWritten then
-			for _, serviceLine in serviceLines do
-				table.insert(organizedLines, serviceLine)
-			end
-			serviceWritten = true
-		end
-		if lineNumber == requireInsertLine and not requireWritten then
-			for _, requireLine in requireLines do
-				table.insert(organizedLines, requireLine)
-			end
-			requireWritten = true
+		if isManagedLine(lineNumber, line) then
+			continue
 		end
 
-		if importLineNumbers[lineNumber] ~= true then
+		if lineNumber <= lastCommentLine then
 			table.insert(organizedLines, line)
+			continue
 		end
+
+		if not insertedImportBlock then
+			while #organizedLines > 0 and organizedLines[#organizedLines] == "" do
+				table.remove(organizedLines, #organizedLines)
+			end
+			if #organizedLines > 0 then
+				table.insert(organizedLines, "")
+			end
+			for _, importLine in importBlock do
+				table.insert(organizedLines, importLine)
+			end
+			pendingBlank = true
+			insertedImportBlock = true
+		end
+
+		if pendingBlank then
+			if line ~= "" then
+				table.insert(organizedLines, "")
+			end
+			pendingBlank = false
+		end
+
+		table.insert(organizedLines, line)
 	end
 
-	if not serviceWritten then
-		for _, serviceLine in serviceLines do
-			table.insert(organizedLines, serviceLine)
+	if not insertedImportBlock then
+		while #organizedLines > 0 and organizedLines[#organizedLines] == "" do
+			table.remove(organizedLines, #organizedLines)
 		end
-	end
-	if not requireWritten then
-		for _, requireLine in requireLines do
-			table.insert(organizedLines, requireLine)
+		if #organizedLines > 0 then
+			table.insert(organizedLines, "")
+		end
+		for _, importLine in importBlock do
+			table.insert(organizedLines, importLine)
 		end
 	end
 
@@ -647,7 +850,13 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 
 	const items = table.clone(response.items)
 
-	const function getNewText(identifier: string, acquireSource: string?, requireSource: string?): string
+	const function getNewText(
+		identifier: string,
+		acquireSource: string?,
+		requireSource: string?,
+		folderSources: { string }?,
+		remoteSource: string?
+	): string
 		const lines = table.clone(patchLines)
 		lines[position.line] = string.sub(line, 1, triggerStartCharacter - 1) .. identifier
 		const newLines = organizeImports(
@@ -658,6 +867,8 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			acquires,
 			acquireSource,
 			requireSource,
+			folderSources,
+			remoteSource,
 			settings
 		)
 		return table.concat(newLines, "\n")
@@ -674,6 +885,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 
 			local serviceIdentifier = service.Name
 			local acquireSource: string? = nil
+			local folderSources = {}
 			local requirePath = ""
 			if settings.requireMode == "local" then
 				if settings.stringRequires then
@@ -692,7 +904,9 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 						settings
 					)
 				end
-				requirePath = `{serviceIdentifier}{path}`
+				local baseExpression = serviceIdentifier
+				folderSources, baseExpression = getFolderImports(service, module, serviceIdentifier, settings)
+				requirePath = `{baseExpression}{getPathSegmentExpression(module.Name)}`
 			end
 
 			const requireSource = finishStatement(`{settings.keyword} {identifier} = require({requirePath})`, settings)
@@ -703,7 +917,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 				documentation = { value = "Auto-require" },
 				detail = module:GetFullName(),
 				textEdit = {
-					newText = getNewText(identifier, acquireSource, requireSource),
+					newText = getNewText(identifier, acquireSource, requireSource, folderSources, nil),
 					insert = patchRange,
 					replace = patchRange,
 				},
@@ -729,7 +943,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 				detail = "Service",
 				learnMoreLink = `https://create.roblox.com/docs/reference/engine/classes/{identifier}`,
 				textEdit = {
-					newText = getNewText(identifier, acquireSource, nil),
+					newText = getNewText(identifier, acquireSource, nil, nil, nil),
 					insert = patchRange,
 					replace = patchRange,
 				},
@@ -750,7 +964,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 				documentation = { value = "Auto-service" },
 				detail = "Additional Service",
 				textEdit = {
-					newText = getNewText(identifier, acquireSource, nil),
+					newText = getNewText(identifier, acquireSource, nil, nil, nil),
 					insert = patchRange,
 					replace = patchRange,
 				},
@@ -762,6 +976,10 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 		const normalizedTrigger = string.lower(trigger)
 		for _, instance in game:GetDescendants() do
 			local detail: string? = nil
+			local importSource: string? = nil
+			local folderSources = {}
+			local acquireSource: string? = nil
+			local completionText = instance.Name
 			if settings.autoRemotes and (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then
 				detail = instance.ClassName
 			elseif settings.autoFolders and instance:IsA("Folder") then
@@ -773,15 +991,48 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			end
 
 			const editRange = getReplaceRange(position, triggerStartCharacter)
+			const root = getDataModelRoot(instance)
+			if root ~= nil then
+				local rootIdentifier = root.Name
+				if acquires.byServiceName[rootIdentifier] ~= nil then
+					rootIdentifier = acquires.byServiceName[rootIdentifier].identifier
+				else
+					acquireSource = finishStatement(
+						`{settings.keyword} {rootIdentifier} = game:GetService("{rootIdentifier}")`,
+						settings
+					)
+				end
+
+				local baseExpression = rootIdentifier
+				folderSources, baseExpression = getFolderImports(root, instance, rootIdentifier, settings)
+				const identifier = getImportIdentifierFromInstance(instance)
+				completionText = identifier
+				if instance:IsA("Folder") then
+					importSource = finishStatement(
+						`{settings.keyword} {identifier} = {baseExpression}{getPathSegmentExpression(instance.Name)}`,
+						settings
+					)
+					table.insert(folderSources, importSource)
+					importSource = nil
+				else
+					importSource = finishStatement(
+						`{settings.keyword} {identifier} = {baseExpression}{getPathSegmentExpression(instance.Name)}`,
+						settings
+					)
+				end
+			end
+
 			table.insert(items, {
 				label = instance.Name,
 				kind = Enum.CompletionItemKind.Snippet,
 				documentation = { value = `CodeKit {detail}` },
 				detail = instance:GetFullName(),
 				textEdit = {
-					newText = instance.Name,
-					insert = editRange,
-					replace = editRange,
+					newText = if importSource ~= nil or #folderSources > 0 or acquireSource ~= nil
+						then getNewText(completionText, acquireSource, nil, folderSources, importSource)
+						else completionText,
+					insert = if importSource ~= nil or #folderSources > 0 or acquireSource ~= nil then patchRange else editRange,
+					replace = if importSource ~= nil or #folderSources > 0 or acquireSource ~= nil then patchRange else editRange,
 				},
 			})
 		end

@@ -6,4 +6,4 @@
 
 <p align="center">a roblox coding toolkit with everything you need to get started.</p>
 
-<p align="center">more soon.</p>
+<p align="center"><a href="https://create.roblox.com/store/asset/101929511023567/CodeKit">download here</a></p>

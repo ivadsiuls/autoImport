@@ -4,6 +4,7 @@ const Types = require("./Types")
 const GLOBAL_SETTING_KEY = "IvadsAutoImportSettings"
 const LEGACY_SETTING_KEY = "AutoImportSettings"
 const WORKSPACE_SETTINGS_NAME = "_IAI_SETTINGS"
+const DEFAULT_IMPORT_LAYOUT = "[services]\n\n[modules]\n\n[folders]\n\n[remotes]"
 
 const DEFAULT_SETTINGS: Types.Settings = {
 	enabled = true,
@@ -15,8 +16,10 @@ const DEFAULT_SETTINGS: Types.Settings = {
 	autoServices = true,
 	autoRemotes = true,
 	autoFolders = false,
+	importFolderDepth = "First",
 	semicolons = false,
 	importSort = "longestFirst",
+	importLayout = DEFAULT_IMPORT_LAYOUT,
 	additionalServices = {},
 	clientDirectories = {},
 	ignoredNames = { "_Index", "_index", "node_modules", "include" },
@@ -34,6 +37,12 @@ const VALID_IMPORT_SORTS = {
 	pathLast = true,
 	identifierFirst = true,
 	identifierLast = true,
+}
+
+const VALID_IMPORT_FOLDER_DEPTHS = {
+	["First"] = true,
+	["First Two"] = true,
+	["All"] = true,
 }
 
 const function cloneList(list: { string }): { string }
@@ -77,6 +86,10 @@ const function normalizeSettings(value: any): Types.Settings
 	if typeof(importSort) ~= "string" or VALID_IMPORT_SORTS[importSort] ~= true then
 		importSort = DEFAULT_SETTINGS.importSort
 	end
+	local importFolderDepth = value.importFolderDepth
+	if typeof(importFolderDepth) ~= "string" or VALID_IMPORT_FOLDER_DEPTHS[importFolderDepth] ~= true then
+		importFolderDepth = DEFAULT_SETTINGS.importFolderDepth
+	end
 
 	return {
 		enabled = value.enabled ~= false,
@@ -88,8 +101,12 @@ const function normalizeSettings(value: any): Types.Settings
 		autoServices = value.autoServices ~= false,
 		autoRemotes = value.autoRemotes ~= false,
 		autoFolders = value.autoFolders == true,
+		importFolderDepth = importFolderDepth,
 		semicolons = value.semicolons == true,
 		importSort = importSort,
+		importLayout = if typeof(value.importLayout) == "string" and value.importLayout ~= ""
+			then value.importLayout
+			else DEFAULT_SETTINGS.importLayout,
 		additionalServices = normalizeList(value.additionalServices, DEFAULT_SETTINGS.additionalServices),
 		clientDirectories = normalizeList(value.clientDirectories, DEFAULT_SETTINGS.clientDirectories),
 		ignoredNames = normalizeList(value.ignoredNames, DEFAULT_SETTINGS.ignoredNames),
@@ -260,5 +277,6 @@ end
 return {
 	create = create,
 	DEFAULT_SETTINGS = DEFAULT_SETTINGS,
+	DEFAULT_IMPORT_LAYOUT = DEFAULT_IMPORT_LAYOUT,
 	WORKSPACE_SETTINGS_NAME = WORKSPACE_SETTINGS_NAME,
 }

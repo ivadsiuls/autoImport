@@ -92,6 +92,7 @@ export type ImportSort = "longestFirst"
 	| "pathLast"
 	| "identifierFirst"
 	| "identifierLast"
+export type ImportFolderDepth = "First" | "First Two" | "All"
 
 export type Settings = {
 	enabled: boolean,
@@ -103,8 +104,10 @@ export type Settings = {
 	autoServices: boolean,
 	autoRemotes: boolean,
 	autoFolders: boolean,
+	importFolderDepth: ImportFolderDepth,
 	semicolons: boolean,
 	importSort: ImportSort,
+	importLayout: string,
 	additionalServices: { string },
 	clientDirectories: { string },
 	ignoredNames: { string },

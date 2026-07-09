@@ -9,6 +9,8 @@ const effect = vide.effect
 
 export type DropdownSetting = {
 	text: (string?) -> string,
+	row: Frame,
+	dropdown: Frame,
 	label: TextLabel,
 	close: () -> (),
 	isOpen: () -> boolean,
@@ -134,6 +136,8 @@ const function DropdownSetting(
 
 	return {
 		text = selected,
+		row = row,
+		dropdown = dropdownFrame,
 		label = textLabel,
 		close = function()
 			open(false)

@@ -1,4 +1,5 @@
 -- selene: allow(mixed_table)
+const ScriptEditorService = game:GetService("ScriptEditorService")
 const Types = require("./Types")
 const vide = require("./vide")
 const Theme = require("./components/Theme")
@@ -70,15 +71,77 @@ const function createWindow(plugin: Plugin, store: Store)
 	local modeDropdown
 	local keywordDropdown
 	local importSortDropdown
+	local importFolderDepthDropdown
 	local generalSection
 	local requiresSection
 	local servicesSection
 	local clientDirectoriesSection
 	local ignoreSection
+	local updateRequiresHeightFn: (() -> ())? = nil
 
 	const activeScope = (source("global" :: Types.SettingsScope) :: any) :: (arg: Types.SettingsScope?) -> Types.SettingsScope
 	const currentSettings = source(store.getGlobal())
 	const renderTick = source(0)
+	local layoutEditModule: ModuleScript? = nil
+	local layoutEditScope: Types.SettingsScope? = nil
+	local layoutEditSource = ""
+	local layoutEditRunning = false
+
+	const function saveImportLayoutFromEditor()
+		const module = layoutEditModule
+		const scope = layoutEditScope
+		if module == nil or scope == nil then
+			return
+		end
+
+		local sourceText = module.Source
+		pcall(function()
+			sourceText = ScriptEditorService:GetEditorSource(module)
+		end)
+		if sourceText == layoutEditSource then
+			return
+		end
+
+		layoutEditSource = sourceText
+		store.update(scope, "importLayout", sourceText)
+	end
+
+	const function openImportLayoutEditor()
+		if layoutEditModule ~= nil then
+			ScriptEditorService:OpenScriptDocumentAsync(layoutEditModule)
+			return
+		end
+
+		const module = Instance.new("ModuleScript")
+		module.Name = "_CODEKIT_IMPORT_LAYOUT"
+		module.Source = currentSettings().importLayout
+		module.Parent = game
+		layoutEditModule = module
+		layoutEditScope = activeScope()
+		layoutEditSource = module.Source
+		ScriptEditorService:OpenScriptDocumentAsync(module)
+
+		if layoutEditRunning then
+			return
+		end
+		layoutEditRunning = true
+		task.spawn(function()
+			while layoutEditModule ~= nil do
+				saveImportLayoutFromEditor()
+				task.wait(0.5)
+			end
+			layoutEditRunning = false
+		end)
+	end
+
+	const function destroyImportLayoutEditor()
+		saveImportLayoutFromEditor()
+		if layoutEditModule ~= nil then
+			layoutEditModule:Destroy()
+			layoutEditModule = nil
+		end
+		layoutEditScope = nil
+	end
 	const destroyUi = mount(function()
 		const function bindAutomaticSectionHeight(section)
 			const function updateHeight()
@@ -161,12 +224,14 @@ const function createWindow(plugin: Plugin, store: Store)
 							modeDropdown.close()
 							keywordDropdown.close()
 							importSortDropdown.close()
+							importFolderDepthDropdown.close()
 							activeScope("global")
 						end)
 						const workspaceTab = TabButton(tabs, "WORKSPACE", function()
 							modeDropdown.close()
 							keywordDropdown.close()
 							importSortDropdown.close()
+							importFolderDepthDropdown.close()
 							store.refreshWorkspace()
 							activeScope("workspace")
 						end)
@@ -215,7 +280,7 @@ const function createWindow(plugin: Plugin, store: Store)
 						store.update("global", "overrideWorkspaceSettings", not settings.overrideWorkspaceSettings)
 					end)
 
-					requiresSection = Section(content, "Requires", Theme.ROW_HEIGHT * 6)
+					requiresSection = Section(content, "Requires", Theme.ROW_HEIGHT * 8)
 					stringRequiresToggle = ToggleSetting(requiresSection.body, "String Requires", 1, function()
 						const settings = currentSettings()
 						store.update(activeScope(), "stringRequires", not settings.stringRequires)
@@ -226,7 +291,8 @@ const function createWindow(plugin: Plugin, store: Store)
 					end)
 
 					local function updateRequiresHeight()
-						local height = Theme.ROW_HEIGHT * 6
+						const settings = currentSettings()
+						local height = Theme.ROW_HEIGHT * (if settings.autoFolders then 8 else 7)
 						if modeDropdown ~= nil and modeDropdown.isOpen() then
 							height += modeDropdown.getOpenHeight()
 						end
@@ -236,8 +302,12 @@ const function createWindow(plugin: Plugin, store: Store)
 						if importSortDropdown ~= nil and importSortDropdown.isOpen() then
 							height += importSortDropdown.getOpenHeight()
 						end
+						if importFolderDepthDropdown ~= nil and importFolderDepthDropdown.isOpen() then
+							height += importFolderDepthDropdown.getOpenHeight()
+						end
 						requiresSection.setHeight(height)
 					end
+					updateRequiresHeightFn = updateRequiresHeight
 
 					modeDropdown = DropdownSetting(requiresSection.body, "Require Mode", 3, { "local", "global" }, function(value)
 						store.update(activeScope(), "requireMode", value)
@@ -273,6 +343,51 @@ const function createWindow(plugin: Plugin, store: Store)
 						focusLost = function()
 							store.update(activeScope(), "prefix", prefixBox.Text)
 						end,
+					})
+					importFolderDepthDropdown = DropdownSetting(
+						requiresSection.body,
+						"Folder Import Depth",
+						7,
+						{ "First", "First Two", "All" },
+						function(value)
+							store.update(activeScope(), "importFolderDepth", value)
+						end,
+						updateRequiresHeight
+					)
+					new("Frame")({
+						Name = "EditImportLayout",
+						Size = UDim2.new(1, 0, 0, Theme.ROW_HEIGHT),
+						BackgroundColor3 = Theme.ROW_ALT,
+						BorderSizePixel = 0,
+						ClipsDescendants = true,
+						Parent = requiresSection.body,
+
+						Theme.stroke(Theme.BORDER),
+						new("TextLabel")({
+							Name = "Label",
+							Size = UDim2.fromScale(0.5, 1),
+							BackgroundTransparency = 1,
+							Text = "    Import Layout",
+							TextXAlignment = Enum.TextXAlignment.Left,
+							TextColor3 = Theme.MUTED,
+							Font = Enum.Font.SourceSans,
+							TextSize = 15,
+						}),
+						new("TextButton")({
+							Name = "Value",
+							Size = UDim2.new(0.5, -6, 1, -6),
+							Position = UDim2.new(0.5, 3, 0, 3),
+							BackgroundColor3 = Theme.BLUE,
+							BorderSizePixel = 0,
+							Text = "Edit Import Layout",
+							TextColor3 = Theme.TEXT,
+							Font = Enum.Font.SourceSansBold,
+							TextSize = 15,
+							AutoButtonColor = true,
+							Activated = openImportLayoutEditor,
+
+							Theme.stroke(Theme.BLUE_DARK),
+						}),
 					})
 
 					servicesSection = Section(content, "Additional Services", 42)
@@ -338,6 +453,7 @@ const function createWindow(plugin: Plugin, store: Store)
 						modeDropdown.close()
 						keywordDropdown.close()
 						importSortDropdown.close()
+						importFolderDepthDropdown.close()
 						store.reset(activeScope())
 					end)
 					FooterButton(footer, "Done", true, function()
@@ -362,6 +478,21 @@ const function createWindow(plugin: Plugin, store: Store)
 			modeDropdown.text(settings.requireMode)
 			keywordDropdown.text(settings.keyword)
 			importSortDropdown.text(settings.importSort)
+			importFolderDepthDropdown.text(settings.importFolderDepth)
+			if settings.autoFolders then
+				importFolderDepthDropdown.row.Visible = true
+				importFolderDepthDropdown.dropdown.Visible = true
+				importFolderDepthDropdown.row.Size = UDim2.new(1, 0, 0, Theme.ROW_HEIGHT)
+			else
+				importFolderDepthDropdown.close()
+				importFolderDepthDropdown.row.Visible = false
+				importFolderDepthDropdown.dropdown.Visible = false
+				importFolderDepthDropdown.row.Size = UDim2.new(1, 0, 0, 0)
+				importFolderDepthDropdown.dropdown.Size = UDim2.new(1, 0, 0, 0)
+			end
+			if updateRequiresHeightFn ~= nil then
+				updateRequiresHeightFn()
+			end
 			if not additionalServicesBox:IsFocused() then
 				additionalServicesBox.Text = table.concat(settings.additionalServices, ", ")
 			end
@@ -392,6 +523,7 @@ const function createWindow(plugin: Plugin, store: Store)
 			end
 		end,
 		destroy = function()
+			destroyImportLayoutEditor()
 			destroyUi()
 		end,
 	}
