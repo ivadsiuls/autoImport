@@ -62,6 +62,8 @@ const function createWindow(plugin: Plugin, store: Store)
 	local enabledToggle
 	local autoModulesToggle
 	local autoServicesToggle
+	local autoRemotesToggle
+	local autoFoldersToggle
 	local overrideWorkspaceToggle
 	local stringRequiresToggle
 	local semicolonsToggle
@@ -183,7 +185,7 @@ const function createWindow(plugin: Plugin, store: Store)
 					BorderSizePixel = 0,
 				}),
 				vide.action(function(content)
-					generalSection = Section(content, "General", Theme.ROW_HEIGHT * 4)
+					generalSection = Section(content, "General", Theme.ROW_HEIGHT * 6)
 					enabledToggle = ToggleSetting(generalSection.body, "Enabled", 1, function()
 						const settings = currentSettings()
 						store.update(activeScope(), "enabled", not settings.enabled)
@@ -196,8 +198,16 @@ const function createWindow(plugin: Plugin, store: Store)
 						const settings = currentSettings()
 						store.update(activeScope(), "autoServices", not settings.autoServices)
 					end)
+					autoRemotesToggle = ToggleSetting(generalSection.body, "Auto Remotes", 4, function()
+						const settings = currentSettings()
+						store.update(activeScope(), "autoRemotes", not settings.autoRemotes)
+					end)
+					autoFoldersToggle = ToggleSetting(generalSection.body, "Auto Folders", 5, function()
+						const settings = currentSettings()
+						store.update(activeScope(), "autoFolders", not settings.autoFolders)
+					end)
 
-					overrideWorkspaceToggle = ToggleSetting(generalSection.body, "Override Workspace Settings", 4, function()
+					overrideWorkspaceToggle = ToggleSetting(generalSection.body, "Override Workspace Settings", 6, function()
 						if activeScope() ~= "global" then
 							return
 						end
@@ -301,7 +311,7 @@ const function createWindow(plugin: Plugin, store: Store)
 					effect(function()
 						const isGlobal = activeScope() == "global"
 						overrideWorkspaceToggle.row.Size = UDim2.new(1, 0, 0, if isGlobal then Theme.ROW_HEIGHT else 0)
-						generalSection.setHeight(if isGlobal then Theme.ROW_HEIGHT * 4 else Theme.ROW_HEIGHT * 3)
+						generalSection.setHeight(if isGlobal then Theme.ROW_HEIGHT * 6 else Theme.ROW_HEIGHT * 5)
 					end)
 				end),
 			}),
@@ -344,6 +354,8 @@ const function createWindow(plugin: Plugin, store: Store)
 			enabledToggle.set(settings.enabled)
 			autoModulesToggle.set(settings.autoModules)
 			autoServicesToggle.set(settings.autoServices)
+			autoRemotesToggle.set(settings.autoRemotes)
+			autoFoldersToggle.set(settings.autoFolders)
 			overrideWorkspaceToggle.set(settings.overrideWorkspaceSettings)
 			stringRequiresToggle.set(settings.stringRequires)
 			semicolonsToggle.set(settings.semicolons)

@@ -37,6 +37,10 @@ const function TextBoxSetting(props: Props): TextBox
 		Parent = row,
 
 		Theme.stroke(Theme.BORDER),
+		new("UIPadding")({
+			PaddingLeft = UDim.new(0, 8),
+			PaddingRight = UDim.new(0, 8),
+		}),
 	}) :: TextBox
 end
 

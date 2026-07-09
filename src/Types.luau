@@ -101,6 +101,8 @@ export type Settings = {
 	keyword: Keyword,
 	prefix: string,
 	autoServices: boolean,
+	autoRemotes: boolean,
+	autoFolders: boolean,
 	semicolons: boolean,
 	importSort: ImportSort,
 	additionalServices: { string },

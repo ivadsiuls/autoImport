@@ -12,7 +12,10 @@ end
 
 const Types = require("@self/Types")
 const Settings = require("@self/Settings")
+const Snippets = require("@self/Snippets")
 const SettingsWindow = require("@self/SettingsWindow")
+const SnippetsWindow = require("@self/SnippetsWindow")
+const ThemesWindow = require("@self/ThemesWindow")
 const getModules = require("@self/getModules")
 const parseScript = require("@self/parseScript")
 const moduleServices = require("@self/moduleServices")
@@ -21,6 +24,8 @@ const services = require("@self/services")
 const CALLBACK_ID = "ivads-auto-import"
 const PAT_IDENT = `[_%a][_%w]*`
 const SETTINGS_ICON = "rbxassetid://107203088937000"
+const SNIPPETS_ICON = "rbxassetid://78322934048581"
+const THEMES_ICON = "rbxassetid://90425432902432"
 const BOOTSTRAP_DELAY = 0.15
 
 const function isSafeIdentifier(text: string)
@@ -327,6 +332,21 @@ const function finishStatement(source: string, settings: Types.Settings): string
 	return source
 end
 
+const function expandSnippet(source: string, origin: LuaSourceContainer, trigger: string): string
+	local expanded = source
+	expanded = string.gsub(expanded, "%${scriptName}", origin.Name)
+	expanded = string.gsub(expanded, "%${trigger}", trigger)
+	expanded = string.gsub(expanded, "%${%d+:([^}]-)}", "%1")
+	return expanded
+end
+
+const function getReplaceRange(position: Types.Position, triggerStartCharacter: number): Types.Range
+	return {
+		start = { line = position.line, character = triggerStartCharacter },
+		["end"] = { line = position.line, character = position.character },
+	}
+end
+
 const function getFirstEntryLine(entries): number?
 	local lineNumber: number? = nil
 	for _, entry in entries do
@@ -457,9 +477,14 @@ end
 
 const toolbar = plugin:CreateToolbar("CodeKit")
 const settingsButton = toolbar:CreateButton("Settings", "CodeKit Settings", SETTINGS_ICON)
+const snippetsButton = toolbar:CreateButton("Snippets", "CodeKit Snippets", SNIPPETS_ICON)
+const themesButton = toolbar:CreateButton("Themes", "CodeKit Themes", THEMES_ICON)
 const settingsStore = Settings.create(plugin)
+const snippetsStore = Snippets.create(plugin)
 local connections: { RBXScriptConnection } = {}
 local settingsWindow = nil
+local snippetsWindow = nil
+local themesWindow = nil
 local bootstrapQueued = false
 local unloading = false
 local lastAutocompleteError = ""
@@ -469,6 +494,20 @@ settingsButton.Click:Connect(function()
 		settingsWindow = SettingsWindow.create(plugin, settingsStore)
 	end
 	settingsWindow.toggle()
+end)
+
+snippetsButton.Click:Connect(function()
+	if snippetsWindow == nil then
+		snippetsWindow = SnippetsWindow.create(plugin, snippetsStore)
+	end
+	snippetsWindow.toggle()
+end)
+
+themesButton.Click:Connect(function()
+	if themesWindow == nil then
+		themesWindow = ThemesWindow.create(plugin)
+	end
+	themesWindow.toggle()
 end)
 
 const function getRelativePath(origin: Instance, target: Instance): string?
@@ -719,6 +758,69 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 		end
 	end
 
+	if settings.autoRemotes or settings.autoFolders then
+		const normalizedTrigger = string.lower(trigger)
+		for _, instance in game:GetDescendants() do
+			local detail: string? = nil
+			if settings.autoRemotes and (instance:IsA("RemoteEvent") or instance:IsA("RemoteFunction")) then
+				detail = instance.ClassName
+			elseif settings.autoFolders and instance:IsA("Folder") then
+				detail = "Folder"
+			end
+
+			if detail == nil or string.find(string.lower(instance.Name), normalizedTrigger, 1, true) ~= 1 then
+				continue
+			end
+
+			const editRange = getReplaceRange(position, triggerStartCharacter)
+			table.insert(items, {
+				label = instance.Name,
+				kind = Enum.CompletionItemKind.Snippet,
+				documentation = { value = `CodeKit {detail}` },
+				detail = instance:GetFullName(),
+				textEdit = {
+					newText = instance.Name,
+					insert = editRange,
+					replace = editRange,
+				},
+			})
+		end
+	end
+
+	for _, snippet in snippetsStore.get() do
+		const normalizedTrigger = string.lower(trigger)
+		const editRange = getReplaceRange(position, triggerStartCharacter)
+		const function addSnippetItem(label: string, detail: string)
+			table.insert(items, {
+				label = label,
+				kind = Enum.CompletionItemKind.Snippet,
+				documentation = { value = `CodeKit snippet: {snippet.name}` },
+				detail = detail,
+				textEdit = {
+					newText = expandSnippet(snippet.source, origin.script :: LuaSourceContainer, label),
+					insert = editRange,
+					replace = editRange,
+				},
+			})
+		end
+
+		local addedLabels = {}
+		if string.find(string.lower(snippet.name), normalizedTrigger, 1, true) == 1 then
+			addedLabels[snippet.name] = true
+			addSnippetItem(snippet.name, table.concat(snippet.aliases, ", "))
+		end
+
+		for _, alias in snippet.aliases do
+			if string.find(string.lower(alias), normalizedTrigger, 1, true) == 1 then
+				if addedLabels[alias] == true then
+					continue
+				end
+				addedLabels[alias] = true
+				addSnippetItem(alias, snippet.name)
+			end
+		end
+	end
+
 	return {
 		items = items,
 	}
@@ -770,6 +872,7 @@ end
 queueAutocompleteBootstrap()
 
 table.insert(connections, settingsStore.changed:Connect(queueAutocompleteBootstrap))
+table.insert(connections, snippetsStore.changed:Connect(queueAutocompleteBootstrap))
 table.insert(connections, ScriptEditorService.TextDocumentDidOpen:Connect(queueAutocompleteBootstrap))
 table.insert(connections, ScriptEditorService.TextDocumentDidClose:Connect(queueAutocompleteBootstrap))
 
@@ -795,5 +898,12 @@ plugin.Unloading:Connect(function()
 	if settingsWindow ~= nil then
 		settingsWindow.destroy()
 	end
+	if snippetsWindow ~= nil then
+		snippetsWindow.destroy()
+	end
+	if themesWindow ~= nil then
+		themesWindow.destroy()
+	end
 	settingsStore.destroy()
+	snippetsStore.destroy()
 end)
