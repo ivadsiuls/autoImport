@@ -116,11 +116,7 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 	local namesBox: TextBox
 	local noImportTagBox: TextBox
 	local customNameAttributeBox: TextBox
-	local prefixBox: TextBox
-	local servicePrefixBox: TextBox
-	local modulePrefixBox: TextBox
-	local instancePrefixBox: TextBox
-	local definitionPrefixBox: TextBox
+	local autocompletePrefixBox: TextBox
 	local toggles = {}
 	local dropdowns = {}
 	local sectionDropdowns = {}
@@ -232,9 +228,7 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 
 	const function addDropdown(section, label: string, index: number, settingKey: string, options: { string })
 		const dropdown = DropdownSetting(section.body, label, index, options, function(value)
-			if settingKey == "sectionPadding" then
-				update(settingKey, tonumber(value) or 1)
-			elseif settingKey == "indexing.clientScripts" then
+			if settingKey == "indexing.clientScripts" then
 				const nextIndexing = table.clone(currentSettings().indexing)
 				nextIndexing.clientScripts = value
 				update("indexing", nextIndexing)
@@ -291,11 +285,7 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 		namesBox = nil
 		noImportTagBox = nil
 		customNameAttributeBox = nil
-		prefixBox = nil
-		servicePrefixBox = nil
-		modulePrefixBox = nil
-		instancePrefixBox = nil
-		definitionPrefixBox = nil
+		autocompletePrefixBox = nil
 	end
 
 	const function createSectionSettings(parent: Instance, title: string, sectionName: string, withEnabled: boolean?)
@@ -312,34 +302,8 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 			addSectionToggle(section, "Use const", index, sectionName, "useConst")
 			index += 1
 		end
-		addSectionDropdown(section, "Sort order", index, sectionName, "sortOrder", IMPORT_SORT_OPTIONS)
-		index += 1
 		addSectionDropdown(section, "Casing", index, sectionName, "casing", CASING_OPTIONS)
 		index += 1
-		addSectionToggle(section, "Type annotation", index, sectionName, "typeAnnotation")
-		index += 1
-		addSectionToggle(section, "Type assertion", index, sectionName, "typeAssertion")
-		index += 1
-
-		local prefixSettingBox: TextBox
-		prefixSettingBox = TextBoxSetting({
-			parent = section.body,
-			name = "Prefix",
-			index = index,
-			focusLost = function()
-				updateSection(sectionName, "prefix", prefixSettingBox.Text)
-			end,
-		})
-
-		if sectionName == "services" then
-			servicePrefixBox = prefixSettingBox
-		elseif sectionName == "modules" then
-			modulePrefixBox = prefixSettingBox
-		elseif sectionName == "instances" then
-			instancePrefixBox = prefixSettingBox
-		else
-			definitionPrefixBox = prefixSettingBox
-		end
 
 		bindAutomaticSectionHeight(section)
 		return section
@@ -382,30 +346,28 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 		addToggle(miscellaneous, "Instances", 4, "autoInstances")
 		addToggle(miscellaneous, "Remotes", 5, "autoRemotes")
 		addToggle(miscellaneous, "Folders", 6, "autoFolders")
-		addToggle(miscellaneous, "Skip Folders", 7, "skipFolders")
-		addToggle(miscellaneous, "Quick Access", 8, "enableQuickAccess")
-	addToggle(miscellaneous, "Command Bar", 9, "commandBarAutocomplete")
-	addToggle(miscellaneous, "Semicolons", 10, "semicolons")
-	addToggle(miscellaneous, "Duckable Mode", 11, "duckableMode")
-	addDropdown(miscellaneous, "String Quote", 12, "stringQuote", { "double", "single" })
-	addDropdown(miscellaneous, "Call Style", 13, "callStyle", { "parentheses", "bare" })
-	addDropdown(miscellaneous, "Keyword", 14, "keyword", { "local", "const" })
-	addDropdown(miscellaneous, "Require Mode", 15, "requireMode", { "local", "global" })
-	addDropdown(miscellaneous, "Sort Order", 16, "importSort", IMPORT_SORT_OPTIONS)
-	addDropdown(miscellaneous, "Folder Depth", 17, "importFolderDepth", { "First", "First Two", "All" })
-	addDropdown(miscellaneous, "Section Padding", 18, "sectionPadding", { "0", "1", "2", "3", "4" })
-		prefixBox = TextBoxSetting({
+		addToggle(miscellaneous, "Quick Access", 7, "enableQuickAccess")
+		addToggle(miscellaneous, "Command Bar", 8, "commandBarAutocomplete")
+		addToggle(miscellaneous, "Semicolons", 9, "semicolons")
+		addToggle(miscellaneous, "Duckable Mode", 10, "duckableMode")
+		addDropdown(miscellaneous, "String Quote", 11, "stringQuote", { "double", "single" })
+		addDropdown(miscellaneous, "Call Style", 12, "callStyle", { "parentheses", "bare" })
+		addDropdown(miscellaneous, "Default Require Mode", 13, "requireMode", { "local", "global" })
+		addDropdown(miscellaneous, "Sort Order", 14, "importSort", IMPORT_SORT_OPTIONS)
+		addDropdown(miscellaneous, "Folder Depth", 15, "importFolderDepth", { "First", "First Two", "All" })
+		addDropdown(miscellaneous, "Import Placement", 16, "importPlacement", { "Organized", "At Cursor" })
+		autocompletePrefixBox = TextBoxSetting({
 			parent = miscellaneous.body,
-			name = "Prefix",
-			index = 19,
+			name = "Autocomplete Prefix",
+			index = 17,
 			focusLost = function()
-				update("prefix", prefixBox.Text)
+				update("autocompletePrefix", autocompletePrefixBox.Text)
 			end,
 		})
 		noImportTagBox = TextBoxSetting({
 			parent = miscellaneous.body,
 			name = "No-import Tag",
-			index = 20,
+			index = 18,
 			focusLost = function()
 				update("noImportTag", noImportTagBox.Text)
 			end,
@@ -413,7 +375,7 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 		customNameAttributeBox = TextBoxSetting({
 			parent = miscellaneous.body,
 			name = "Custom-Name Attribute",
-			index = 21,
+			index = 19,
 			focusLost = function()
 				update("customNameAttribute", customNameAttributeBox.Text)
 			end,
@@ -424,13 +386,10 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 		createSectionSettings(contentFrame, "Modules", "modules", false)
 
 		const modulesAdvanced = Section(contentFrame, "Module Require", 0)
-		addSectionToggle(modulesAdvanced, "Has padding", 1, "modules", "hasPadding")
-		addSectionToggle(modulesAdvanced, "Nested", 2, "modules", "nested")
-		addSectionToggle(modulesAdvanced, "Show in type checking", 3, "modules", "showInTypeChecking")
-		addSectionToggle(modulesAdvanced, "Relative require-by-string", 4, "modules", "relativeRequireByString")
-		addSectionToggle(modulesAdvanced, "Absolute require-by-string", 5, "modules", "absoluteRequireByString")
-		addSectionDropdown(modulesAdvanced, "Server Scripts Require", 6, "modules", "serverScriptsRequire", MODULE_REQUIRE_OPTIONS)
-		addSectionDropdown(modulesAdvanced, "Client Scripts Require", 7, "modules", "clientScriptsRequire", MODULE_REQUIRE_OPTIONS)
+		addSectionToggle(modulesAdvanced, "Relative require-by-string", 1, "modules", "relativeRequireByString")
+		addSectionToggle(modulesAdvanced, "Absolute require-by-string", 2, "modules", "absoluteRequireByString")
+		addSectionDropdown(modulesAdvanced, "Server Scripts Require", 3, "modules", "serverScriptsRequire", MODULE_REQUIRE_OPTIONS)
+		addSectionDropdown(modulesAdvanced, "Client Scripts Require", 4, "modules", "clientScriptsRequire", MODULE_REQUIRE_OPTIONS)
 		addActionButton(modulesAdvanced.body, "Edit Import Layout", openImportLayoutEditor)
 		bindAutomaticSectionHeight(modulesAdvanced)
 
@@ -815,9 +774,7 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 				end
 			end
 			for key, dropdown in dropdowns do
-				if key == "sectionPadding" then
-					dropdown.text(tostring(settings.sectionPadding))
-				elseif key == "indexing.clientScripts" then
+				if key == "indexing.clientScripts" then
 					dropdown.text(settings.indexing.clientScripts)
 				elseif key == "indexing.serverScripts" then
 					dropdown.text(settings.indexing.serverScripts)
@@ -832,8 +789,8 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 				dropdown.text(settings[sectionName][settingName])
 			end
 
-			if prefixBox ~= nil and not prefixBox:IsFocused() then
-				prefixBox.Text = settings.prefix
+			if autocompletePrefixBox ~= nil and not autocompletePrefixBox:IsFocused() then
+				autocompletePrefixBox.Text = settings.autocompletePrefix
 			end
 			if noImportTagBox ~= nil and not noImportTagBox:IsFocused() then
 				noImportTagBox.Text = settings.noImportTag
@@ -854,17 +811,6 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 				namesBox.Text = table.concat(settings.ignoredNames, ", ")
 			end
 
-			const sectionBoxes = {
-				services = { prefix = servicePrefixBox },
-				modules = { prefix = modulePrefixBox },
-				instances = { prefix = instancePrefixBox },
-				definitions = { prefix = definitionPrefixBox },
-			}
-			for sectionName, boxes in sectionBoxes do
-				if boxes.prefix ~= nil and not boxes.prefix:IsFocused() then
-					boxes.prefix.Text = settings[sectionName].prefix
-				end
-			end
 		end)
 
 		cleanup(store.changed:Connect(function()

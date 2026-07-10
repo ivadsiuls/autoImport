@@ -1,6 +1,5 @@
-const HttpService = game:GetService("HttpService")
 const Types = require("./Types")
-const PluginStorage = require("./PluginStorage")
+const Data = require("./Data")
 
 const GLOBAL_SETTING_KEY = "IvadsAutoImportSettings"
 const LEGACY_SETTING_KEY = "AutoImportSettings"
@@ -11,23 +10,20 @@ const LEGACY_IMPORT_LAYOUT = "[services]\n\n[modules]\n\n[folders]\n\n[remotes]"
 const DEFAULT_SETTINGS: Types.Settings = {
 	enabled = true,
 	autoModules = true,
-	stringRequires = false,
 	requireMode = "global",
 	callStyle = "parentheses",
-	keyword = "const",
 	stringQuote = "double",
-	prefix = ":",
+	autocompletePrefix = ":",
 	autoServices = true,
 	autoInstances = true,
 	autoRemotes = true,
 	autoFolders = false,
-	skipFolders = true,
 	enableQuickAccess = true,
 	commandBarAutocomplete = false,
-	sectionPadding = 1,
 	noImportTag = "CodeKitIgnore",
 	customNameAttribute = "CodeKitName",
 	importFolderDepth = "First",
+	importPlacement = "Organized",
 	semicolons = false,
 	importSort = "longestFirst",
 	importLayout = DEFAULT_IMPORT_LAYOUT,
@@ -38,22 +34,11 @@ const DEFAULT_SETTINGS: Types.Settings = {
 	duckableMode = false,
 	services = {
 		useConst = true,
-		sortOrder = "longestFirst",
-		prefix = ":",
 		casing = "preserve",
-		typeAnnotation = false,
-		typeAssertion = false,
 	},
 	modules = {
 		useConst = true,
-		sortOrder = "longestFirst",
-		prefix = ":",
 		casing = "preserve",
-		typeAnnotation = false,
-		typeAssertion = false,
-		hasPadding = true,
-		nested = false,
-		showInTypeChecking = true,
 		serverScriptsRequire = "dynamic",
 		clientScriptsRequire = "dynamic",
 		relativeRequireByString = false,
@@ -61,20 +46,12 @@ const DEFAULT_SETTINGS: Types.Settings = {
 	},
 	instances = {
 		useConst = true,
-		sortOrder = "longestFirst",
-		prefix = ":",
 		casing = "preserve",
-		typeAnnotation = false,
-		typeAssertion = false,
 	},
 	definitions = {
 		enabled = true,
 		useConst = true,
-		sortOrder = "longestFirst",
-		prefix = ":",
 		casing = "preserve",
-		typeAnnotation = true,
-		typeAssertion = false,
 	},
 	indexing = {
 		clientScripts = "WaitForChild",
@@ -100,6 +77,11 @@ const VALID_IMPORT_FOLDER_DEPTHS = {
 	["First"] = true,
 	["First Two"] = true,
 	["All"] = true,
+}
+
+const VALID_IMPORT_PLACEMENTS = {
+	Organized = true,
+	["At Cursor"] = true,
 }
 
 const VALID_CALL_STYLES = {
@@ -156,13 +138,6 @@ const function normalizeList(value: any, fallback: { string }): { string }
 	return normalized
 end
 
-const function normalizeNumber(value: any, fallback: number, minimum: number, maximum: number): number
-	if typeof(value) ~= "number" then
-		return fallback
-	end
-	return math.clamp(math.floor(value), minimum, maximum)
-end
-
 const function normalizeEnum(value: any, fallback: string, valid: { [string]: boolean }): string
 	if typeof(value) ~= "string" or valid[value] ~= true then
 		return fallback
@@ -177,11 +152,7 @@ const function normalizeSection(value: any, fallback: Types.SectionSettings): Ty
 
 	return {
 		useConst = value.useConst ~= false,
-		sortOrder = normalizeEnum(value.sortOrder, fallback.sortOrder, VALID_IMPORT_SORTS) :: Types.ImportSort,
-		prefix = if typeof(value.prefix) == "string" then value.prefix else fallback.prefix,
 		casing = normalizeEnum(value.casing, fallback.casing, VALID_CASINGS) :: Types.Casing,
-		typeAnnotation = value.typeAnnotation == true,
-		typeAssertion = value.typeAssertion == true,
 	}
 end
 
@@ -193,14 +164,7 @@ const function normalizeModules(value: any, fallback: Types.ModulesSettings): Ty
 
 	return {
 		useConst = base.useConst,
-		sortOrder = base.sortOrder,
-		prefix = base.prefix,
 		casing = base.casing,
-		typeAnnotation = base.typeAnnotation,
-		typeAssertion = base.typeAssertion,
-		hasPadding = value.hasPadding ~= false,
-		nested = value.nested == true,
-		showInTypeChecking = value.showInTypeChecking ~= false,
 		serverScriptsRequire = normalizeEnum(
 			value.serverScriptsRequire,
 			fallback.serverScriptsRequire,
@@ -225,11 +189,7 @@ const function normalizeDefinitions(value: any, fallback: Types.DefinitionsSetti
 	return {
 		enabled = value.enabled ~= false,
 		useConst = base.useConst,
-		sortOrder = base.sortOrder,
-		prefix = base.prefix,
 		casing = base.casing,
-		typeAnnotation = base.typeAnnotation,
-		typeAssertion = base.typeAssertion,
 	}
 end
 
@@ -253,10 +213,6 @@ const function normalizeSettings(value: any): Types.Settings
 	if requireMode ~= "local" and requireMode ~= "global" then
 		requireMode = DEFAULT_SETTINGS.requireMode
 	end
-	local keyword = value.keyword
-	if keyword ~= "local" and keyword ~= "const" then
-		keyword = DEFAULT_SETTINGS.keyword
-	end
 	local importSort = value.importSort
 	if typeof(importSort) ~= "string" or VALID_IMPORT_SORTS[importSort] ~= true then
 		importSort = DEFAULT_SETTINGS.importSort
@@ -265,24 +221,29 @@ const function normalizeSettings(value: any): Types.Settings
 	if typeof(importFolderDepth) ~= "string" or VALID_IMPORT_FOLDER_DEPTHS[importFolderDepth] ~= true then
 		importFolderDepth = DEFAULT_SETTINGS.importFolderDepth
 	end
+	local importPlacement = value.importPlacement
+	if typeof(importPlacement) ~= "string" or VALID_IMPORT_PLACEMENTS[importPlacement] ~= true then
+		importPlacement = DEFAULT_SETTINGS.importPlacement
+	end
+	local autocompletePrefix = if typeof(value.autocompletePrefix) == "string"
+		then value.autocompletePrefix
+		elseif typeof(value.prefix) == "string"
+			then value.prefix
+			else DEFAULT_SETTINGS.autocompletePrefix
 
 	return {
 		enabled = value.enabled ~= false,
 		autoModules = value.autoModules ~= false,
-		stringRequires = value.stringRequires == true,
 		requireMode = requireMode,
 		callStyle = normalizeEnum(value.callStyle, DEFAULT_SETTINGS.callStyle, VALID_CALL_STYLES) :: Types.CallStyle,
-		keyword = keyword,
 		stringQuote = normalizeEnum(value.stringQuote, DEFAULT_SETTINGS.stringQuote, VALID_STRING_QUOTES) :: Types.StringQuote,
-		prefix = if typeof(value.prefix) == "string" then value.prefix else DEFAULT_SETTINGS.prefix,
+		autocompletePrefix = autocompletePrefix,
 		autoServices = value.autoServices ~= false,
 		autoInstances = value.autoInstances ~= false,
 		autoRemotes = value.autoRemotes ~= false,
 		autoFolders = value.autoFolders == true,
-		skipFolders = value.skipFolders ~= false,
 		enableQuickAccess = value.enableQuickAccess ~= false,
 		commandBarAutocomplete = value.commandBarAutocomplete == true,
-		sectionPadding = normalizeNumber(value.sectionPadding, DEFAULT_SETTINGS.sectionPadding, 0, 4),
 		noImportTag = if typeof(value.noImportTag) == "string" and value.noImportTag ~= ""
 			then value.noImportTag
 			else DEFAULT_SETTINGS.noImportTag,
@@ -290,6 +251,7 @@ const function normalizeSettings(value: any): Types.Settings
 			then value.customNameAttribute
 			else DEFAULT_SETTINGS.customNameAttribute,
 		importFolderDepth = importFolderDepth,
+		importPlacement = importPlacement,
 		semicolons = value.semicolons == true,
 		importSort = importSort,
 		importLayout = if value.importLayout == LEGACY_IMPORT_LAYOUT
@@ -311,91 +273,22 @@ const function normalizeSettings(value: any): Types.Settings
 	}
 end
 
-const function getWorkspaceModule(): ModuleScript?
-	const existing = game:FindFirstChild(WORKSPACE_SETTINGS_NAME)
-	if existing == nil then
-		return nil
-	end
-	if not existing:IsA("ModuleScript") then
-		return nil
-	end
-
-	return existing
-end
-
-const function getOrCreateWorkspaceModule(): ModuleScript
-	const existing = getWorkspaceModule()
-	if existing ~= nil then
-		return existing
-	end
-
-	const module = Instance.new("ModuleScript")
-	module.Name = WORKSPACE_SETTINGS_NAME
-	module.Parent = game
-	return module
-end
-
-const function getLongStringDelimiter(text: string): (string, string)
-	local equals = ""
-	while string.find(text, `]{equals}]`, 1, true) ~= nil do
-		equals ..= "="
-	end
-
-	return `[{equals}[`, `]{equals}]`
-end
-
-const function encodeWorkspaceSource(settings: Types.Settings): string
-	const payload = HttpService:JSONEncode(settings)
-	const openDelimiter, closeDelimiter = getLongStringDelimiter(payload)
-	return table.concat({
-		"-- generated by CodeKit",
-		"-- edit from the plugin settings window",
-		`return game:GetService("HttpService"):JSONDecode({openDelimiter}{payload}{closeDelimiter})`,
-	}, "\n")
-end
-
-const function decodeWorkspaceSource(source: string): Types.Settings?
-	const openStart, openEnd, equals = string.find(source, "%[(=*)%[")
-	if openStart == nil or openEnd == nil or equals == nil then
-		return nil
-	end
-	const closeDelimiter = `]{equals}]`
-	const closeStart = string.find(source, closeDelimiter, openEnd + 1, true)
-	if closeStart == nil then
-		return nil
-	end
-	const payload = string.sub(source, openEnd + 1, closeStart - 1)
-
-	local decoded
-	local ok = pcall(function()
-		decoded = HttpService:JSONDecode(payload)
-	end)
-	if not ok then
-		return nil
-	end
-
-	return normalizeSettings(decoded)
-end
-
 const function loadWorkspaceSettings(): Types.Settings?
-	const module = getWorkspaceModule()
-	if module == nil then
-		return nil
-	end
-
-	return decodeWorkspaceSource(module.Source)
+	return Data.loadWorkspace(WORKSPACE_SETTINGS_NAME, nil)
 end
 
 const function saveWorkspaceSettings(settings: Types.Settings)
-	const module = getOrCreateWorkspaceModule()
-	module.Source = encodeWorkspaceSource(settings)
+	Data.saveWorkspace(WORKSPACE_SETTINGS_NAME, "edit from the plugin settings window", settings)
 end
 
 const function create(plugin: Plugin)
 	local globalSettings = normalizeSettings(
-		PluginStorage.load(plugin, GLOBAL_SETTING_KEY, PluginStorage.load(plugin, LEGACY_SETTING_KEY, {}))
+		Data.load(plugin, GLOBAL_SETTING_KEY, Data.load(plugin, LEGACY_SETTING_KEY, {}))
 	)
-	local workspaceSettings = loadWorkspaceSettings()
+	local loadedWorkspaceSettings = loadWorkspaceSettings()
+	local workspaceSettings = if loadedWorkspaceSettings == nil
+		then nil
+		else normalizeSettings(loadedWorkspaceSettings)
 	const changed = Instance.new("BindableEvent")
 
 	const function getEffectiveSettings(): Types.Settings
@@ -410,7 +303,7 @@ const function create(plugin: Plugin)
 	end
 
 	const function saveGlobal()
-		PluginStorage.save(plugin, GLOBAL_SETTING_KEY, globalSettings)
+		Data.save(plugin, GLOBAL_SETTING_KEY, globalSettings)
 		fireChanged()
 	end
 
@@ -448,11 +341,8 @@ const function create(plugin: Plugin)
 		reset = function()
 			globalSettings = normalizeSettings(DEFAULT_SETTINGS)
 			workspaceSettings = nil
-			const workspaceModule = getWorkspaceModule()
-			if workspaceModule ~= nil then
-				workspaceModule:Destroy()
-			end
-			PluginStorage.save(plugin, GLOBAL_SETTING_KEY, globalSettings)
+			Data.deleteWorkspace(WORKSPACE_SETTINGS_NAME)
+			Data.save(plugin, GLOBAL_SETTING_KEY, globalSettings)
 			fireChanged()
 		end,
 		refreshWorkspace = function()

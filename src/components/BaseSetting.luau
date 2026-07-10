@@ -1,9 +1,9 @@
 -- selene: allow(mixed_table)
 const vide = require("../vide")
 const Theme = require("./Theme")
+const HoverDescription = require("./HoverDescription")
 
 const new = vide.create
-const HOVER_DELAY = 1
 
 const DESCRIPTIONS = {
 	Enabled = "Enable CodeKit automation.",
@@ -23,6 +23,7 @@ const DESCRIPTIONS = {
 	["Require Mode"] = "Choose local or global require paths.",
 	["Sort Order"] = "Choose how generated imports are ordered.",
 	["Folder Depth"] = "Choose how many folder levels are imported.",
+	["Import Placement"] = "Choose whether generated imports are organized or inserted above the current line.",
 	["Section Padding"] = "Choose blank lines between import sections.",
 	Prefix = "Prefix used when generating identifiers.",
 	["No-import Tag"] = "Attribute tag that excludes an instance from imports.",
@@ -76,74 +77,11 @@ const function BaseSetting(props: Props): Frame
 			BackgroundTransparency = 1,
 		}),
 	}) :: Frame
-	local description = new("TextLabel")({
-		Name = "HoverDescription",
-		Size = UDim2.new(1, -24, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		Position = UDim2.fromOffset(12, 0),
-		BackgroundColor3 = Theme.SECTION,
-		BorderSizePixel = 0,
-		Text = props.description or DESCRIPTIONS[props.name] or `{props.name} setting`,
-		TextWrapped = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		TextColor3 = Theme.TEXT,
-		Font = Enum.Font.SourceSans,
-		TextSize = 16,
-		LineHeight = 1.15,
-		Visible = false,
-		ZIndex = 100,
-		Active = false,
-		Parent = root,
-		Theme.stroke(Theme.BORDER),
-		new("UICorner")({
-			CornerRadius = UDim.new(0, 6),
-		}),
-		new("UIPadding")({
-			PaddingLeft = UDim.new(0, 14),
-			PaddingRight = UDim.new(0, 14),
-			PaddingTop = UDim.new(0, 11),
-			PaddingBottom = UDim.new(0, 11),
-		}),
+	HoverDescription({
+		root = root,
+		target = row,
+		text = props.description or DESCRIPTIONS[props.name] or `{props.name} setting`,
 	})
-	const function positionDescription()
-		const rootPosition = root.AbsolutePosition
-		const rowPosition = row.AbsolutePosition
-		const descriptionHeight = description.AbsoluteSize.Y
-		const descriptionWidth = description.AbsoluteSize.X
-		const maxX = math.max(12, root.AbsoluteSize.X - descriptionWidth - 12)
-		const x = math.clamp(rowPosition.X - rootPosition.X + 8, 12, maxX)
-		const belowY = rowPosition.Y - rootPosition.Y + row.AbsoluteSize.Y + 4
-		const aboveY = rowPosition.Y - rootPosition.Y - descriptionHeight - 4
-		const y = if belowY + descriptionHeight <= root.AbsoluteSize.Y - 8 then belowY else math.max(8, aboveY)
-		description.Position = UDim2.fromOffset(x, y)
-	end
-
-	local hoverToken = 0
-	row.MouseEnter:Connect(function()
-		hoverToken += 1
-		const currentHoverToken = hoverToken
-		task.delay(HOVER_DELAY, function()
-			if currentHoverToken ~= hoverToken or row.Parent == nil then
-				return
-			end
-			description.Visible = true
-			task.defer(function()
-				if currentHoverToken ~= hoverToken or row.Parent == nil then
-					return
-				end
-				positionDescription()
-			end)
-		end)
-	end)
-	row.MouseLeave:Connect(function()
-		hoverToken += 1
-		description.Visible = false
-	end)
-	row.Destroying:Connect(function()
-		hoverToken += 1
-		description:Destroy()
-	end)
 	return row
 end
 

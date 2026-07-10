@@ -79,7 +79,7 @@ const function quoteString(text: string, settings: Types.Settings): string
 	return string.format("%q", text)
 end
 
-const function getSectionKeyword(sectionSettings: Types.SectionSettings, fallback: Types.Settings): Types.Keyword
+const function getSectionKeyword(sectionSettings: Types.SectionSettings): Types.Keyword
 	return if sectionSettings.useConst then "const" else "local"
 end
 
@@ -1036,7 +1036,7 @@ const function getFolderImports(root: Instance, target: Instance, rootIdentifier
 		expression ..= getPathSegmentExpression(ancestor.Name)
 		if settings.autoFolders and ancestor:IsA("Folder") and importedFolderCount < depthLimit then
 			const identifier = getImportIdentifierFromInstance(ancestor, settings)
-			table.insert(folderLines, finishStatement(`{getSectionKeyword(settings.instances, settings)} {identifier} = {expression}`, settings))
+			table.insert(folderLines, finishStatement(`{getSectionKeyword(settings.instances)} {identifier} = {expression}`, settings))
 			expression = identifier
 			importedFolderCount += 1
 		end
@@ -1630,17 +1630,17 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 	const slice = origin.document:GetText(1, 1, position.line, position.character)
 
 	local triggerText: string?
-	if settings.prefix == "" then
+	if settings.autocompletePrefix == "" then
 		triggerText = string.match(slice, `({PAT_IDENT})$`)
 	else
-		triggerText = string.match(slice, `{escapePattern(settings.prefix)}({PAT_IDENT})$`)
+		triggerText = string.match(slice, `{escapePattern(settings.autocompletePrefix)}({PAT_IDENT})$`)
 	end
 	if not triggerText then
 		return response
 	end
 
-	if settings.prefix ~= "" then
-		const beforePrefixIndex = #slice - #triggerText - #settings.prefix
+	if settings.autocompletePrefix ~= "" then
+		const beforePrefixIndex = #slice - #triggerText - #settings.autocompletePrefix
 		if beforePrefixIndex > 0 then
 			const charBefore = string.sub(slice, beforePrefixIndex, beforePrefixIndex)
 			if string.match(charBefore, "[%w_]") then
@@ -1666,7 +1666,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 
 	const patchLines = string.split(slice, "\n")
 	const line = patchLines[position.line]
-	const triggerStartCharacter = position.character - #trigger - #settings.prefix
+	const triggerStartCharacter = position.character - #trigger - #settings.autocompletePrefix
 	if line == nil or triggerStartCharacter < 1 then
 		return response
 	end
@@ -1702,6 +1702,36 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 		folderSources: { string }?,
 		remoteSource: string?
 	): string
+		if settings.importPlacement == "At Cursor" then
+			const cursorLines = table.clone(patchLines)
+			cursorLines[position.line] = string.sub(line, 1, triggerStartCharacter - 1) .. identifier
+			const indentation = string.match(line, "^%s*") or ""
+			const importLines = {}
+			if acquireSource ~= nil then
+				table.insert(importLines, `{indentation}{acquireSource}`)
+			end
+			if folderSources ~= nil then
+				for _, folderLine in folderSources do
+					table.insert(importLines, `{indentation}{folderLine}`)
+				end
+			end
+			if requireSource ~= nil then
+				table.insert(importLines, `{indentation}{requireSource}`)
+			end
+			if remoteSource ~= nil then
+				table.insert(importLines, `{indentation}{remoteSource}`)
+			end
+
+			const insertionIndex = position.line
+			for importIndex, importLine in importLines do
+				table.insert(cursorLines, insertionIndex + importIndex - 1, importLine)
+			end
+			if #importLines > 0 then
+				table.insert(cursorLines, insertionIndex + #importLines, "")
+			end
+			return table.concat(cursorLines, "\n")
+		end
+
 		const lines = table.clone(patchLines)
 		lines[position.line] = string.sub(line, 1, triggerStartCharacter - 1) .. identifier
 		const newLines = organizeImports(
@@ -1736,19 +1766,19 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			local requirePath = ""
 			const moduleRequireMode = getScriptRequireMode(originScript, settings)
 			if moduleRequireMode == "local" then
-				if settings.stringRequires or settings.modules.relativeRequireByString then
+				if settings.modules.relativeRequireByString then
 					requirePath = quoteString(getRelativePath(originScript, module), settings)
 				else
 					requirePath = getLocalPathExpression(originScript, module)
 				end
-			elseif settings.stringRequires or settings.modules.absoluteRequireByString then
+			elseif settings.modules.absoluteRequireByString then
 				requirePath = quoteString(getGlobalStringPath(service, module), settings)
 			else
 				if acquires.byServiceName[serviceIdentifier] ~= nil then
 					serviceIdentifier = acquires.byServiceName[serviceIdentifier].identifier
 				else
 					acquireSource = finishStatement(
-						`{getSectionKeyword(settings.services, settings)} {serviceIdentifier} = game:GetService({quoteString(serviceIdentifier, settings)})`,
+						`{getSectionKeyword(settings.services)} {serviceIdentifier} = game:GetService({quoteString(serviceIdentifier, settings)})`,
 						settings
 					)
 				end
@@ -1758,7 +1788,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			end
 
 			const requireCall = if settings.callStyle == "bare" then `require {requirePath}` else `require({requirePath})`
-			const requireSource = finishStatement(`{getSectionKeyword(settings.modules, settings)} {identifier} = {requireCall}`, settings)
+			const requireSource = finishStatement(`{getSectionKeyword(settings.modules)} {identifier} = {requireCall}`, settings)
 
 			table.insert(items, {
 				label = module.Name,
@@ -1786,7 +1816,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			end
 
 			const acquireSource = finishStatement(
-				`{getSectionKeyword(settings.services, settings)} {identifier} = game:GetService({quoteString(serviceName, settings)})`,
+				`{getSectionKeyword(settings.services)} {identifier} = game:GetService({quoteString(serviceName, settings)})`,
 				settings
 			)
 
@@ -1812,7 +1842,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			const localIdentifier = serviceAliases[identifier] or applyCasing(identifier, settings.services.casing)
 
 			const acquireSource = finishStatement(
-				`{getSectionKeyword(settings.services, settings)} {localIdentifier} = game:GetService({quoteString(identifier, settings)})`,
+				`{getSectionKeyword(settings.services)} {localIdentifier} = game:GetService({quoteString(identifier, settings)})`,
 				settings
 			)
 
@@ -1834,9 +1864,6 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 		const normalizedTrigger = string.lower(trigger)
 		for _, instance in game:GetDescendants() do
 			if isNoImport(instance, settings) then
-				continue
-			end
-			if settings.skipFolders and (instance:IsA("Folder") or instance:IsA("Configuration")) then
 				continue
 			end
 			local detail: string? = nil
@@ -1862,7 +1889,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 					rootIdentifier = acquires.byServiceName[rootIdentifier].identifier
 				else
 					acquireSource = finishStatement(
-						`{getSectionKeyword(settings.services, settings)} {rootIdentifier} = game:GetService({quoteString(rootIdentifier, settings)})`,
+						`{getSectionKeyword(settings.services)} {rootIdentifier} = game:GetService({quoteString(rootIdentifier, settings)})`,
 						settings
 					)
 				end
@@ -1874,14 +1901,14 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 				const indexedExpression = getInstanceIndexExpression(baseExpression, instance, getScriptIndexingMode(originScript, settings), settings)
 				if instance:IsA("Folder") then
 					importSource = finishStatement(
-						`{getSectionKeyword(settings.instances, settings)} {identifier} = {indexedExpression}`,
+						`{getSectionKeyword(settings.instances)} {identifier} = {indexedExpression}`,
 						settings
 					)
 					table.insert(folderSources, importSource)
 					importSource = nil
 				else
 					importSource = finishStatement(
-						`{getSectionKeyword(settings.instances, settings)} {identifier} = {indexedExpression}`,
+						`{getSectionKeyword(settings.instances)} {identifier} = {indexedExpression}`,
 						settings
 					)
 				end
@@ -1914,13 +1941,13 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			local acquireSource: string? = nil
 			if definition.service ~= nil and acquires.byServiceName[definition.service] == nil then
 				acquireSource = finishStatement(
-					`{getSectionKeyword(settings.services, settings)} {definition.service} = game:GetService({quoteString(definition.service, settings)})`,
+					`{getSectionKeyword(settings.services)} {definition.service} = game:GetService({quoteString(definition.service, settings)})`,
 					settings
 				)
 			end
 
 			const definitionSource = finishStatement(
-				`{getSectionKeyword(settings.definitions, settings)} {identifier} = {definition.source}`,
+				`{getSectionKeyword(settings.definitions)} {identifier} = {definition.source}`,
 				settings
 			)
 

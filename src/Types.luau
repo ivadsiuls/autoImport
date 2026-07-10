@@ -95,23 +95,17 @@ export type ImportSort = "longestFirst"
 	| "identifierFirst"
 	| "identifierLast"
 export type ImportFolderDepth = "First" | "First Two" | "All"
+export type ImportPlacement = "Organized" | "At Cursor"
 export type Casing = "preserve" | "camel" | "pascal" | "snake"
 export type IndexingMode = "WaitForChild" | "FindFirstChild" | "Direct"
 export type ModuleRequireMode = "dynamic" | "relative" | "absolute"
 
 export type SectionSettings = {
 	useConst: boolean,
-	sortOrder: ImportSort,
-	prefix: string,
 	casing: Casing,
-	typeAnnotation: boolean,
-	typeAssertion: boolean,
 }
 
 export type ModulesSettings = SectionSettings & {
-	hasPadding: boolean,
-	nested: boolean,
-	showInTypeChecking: boolean,
 	serverScriptsRequire: ModuleRequireMode,
 	clientScriptsRequire: ModuleRequireMode,
 	relativeRequireByString: boolean,
@@ -130,23 +124,20 @@ export type IndexingSettings = {
 export type Settings = {
 	enabled: boolean,
 	autoModules: boolean,
-	stringRequires: boolean,
 	requireMode: RequireMode,
 	callStyle: CallStyle,
-	keyword: Keyword,
 	stringQuote: StringQuote,
-	prefix: string,
+	autocompletePrefix: string,
 	autoServices: boolean,
 	autoInstances: boolean,
 	autoRemotes: boolean,
 	autoFolders: boolean,
-	skipFolders: boolean,
 	enableQuickAccess: boolean,
 	commandBarAutocomplete: boolean,
-	sectionPadding: number,
 	noImportTag: string,
 	customNameAttribute: string,
 	importFolderDepth: ImportFolderDepth,
+	importPlacement: ImportPlacement,
 	semicolons: boolean,
 	importSort: ImportSort,
 	importLayout: string,

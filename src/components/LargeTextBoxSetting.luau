@@ -1,6 +1,7 @@
 -- selene: allow(mixed_table)
 const vide = require("../vide")
 const Theme = require("./Theme")
+const HoverDescription = require("./HoverDescription")
 
 const new = vide.create
 
@@ -69,31 +70,12 @@ const function LargeTextBoxSetting(props: Props): TextBox
 			PaddingRight = UDim.new(0, 8),
 		}),
 	}) :: TextBox
-	local description = new("TextLabel")({
-		Name = "HoverDescription",
-		Size = UDim2.fromScale(1, 1),
-		Position = UDim2.fromScale(0, 0),
-		BackgroundColor3 = Theme.SECTION,
-		BorderSizePixel = 0,
-		Text = props.description or `{props.label or props.name} setting`,
-		TextWrapped = true,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		TextColor3 = Theme.TEXT,
-		Font = Enum.Font.SourceSans,
-		TextSize = 13,
-		Visible = false,
-		ZIndex = 20,
-		Active = false,
-		Parent = textBox,
-		Theme.stroke(Theme.BLUE_DARK),
+	const root = props.parent.Parent.Parent :: Frame
+	HoverDescription({
+		root = root,
+		target = container,
+		text = props.description or `{props.label or props.name} setting`,
 	})
-	container.MouseEnter:Connect(function()
-		description.Visible = true
-	end)
-	container.MouseLeave:Connect(function()
-		description.Visible = false
-	end)
 	return textBox
 end
 

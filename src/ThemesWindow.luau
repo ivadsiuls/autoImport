@@ -5,7 +5,7 @@ const TweenService = game:GetService("TweenService")
 const vide = require("./vide")
 const UiTheme = require("./components/Theme")
 const Themes = require("./Themes")
-const PluginStorage = require("./PluginStorage")
+const Data = require("./Data")
 
 const new = vide.create
 const mount = vide.mount
@@ -288,7 +288,7 @@ const function createPanel(parent: Instance, plugin: Plugin)
 	local loadingImage: ImageLabel
 
 	const selectedTheme = source(nil)
-	const customThemes = source(PluginStorage.load(plugin, CUSTOM_THEMES_KEY, {}))
+	const customThemes = source(Data.load(plugin, CUSTOM_THEMES_KEY, {}))
 	const searchQuery = source("")
 	const importVisible = source(false)
 	const editingTheme = source(nil)
@@ -350,7 +350,7 @@ const function createPanel(parent: Instance, plugin: Plugin)
 
 	const function saveCustomThemes(nextThemes)
 		customThemes(nextThemes)
-		PluginStorage.save(plugin, CUSTOM_THEMES_KEY, nextThemes)
+		Data.save(plugin, CUSTOM_THEMES_KEY, nextThemes)
 	end
 
 	const function openThemeEditor(theme)
