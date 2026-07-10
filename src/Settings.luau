@@ -4,25 +4,81 @@ const Types = require("./Types")
 const GLOBAL_SETTING_KEY = "IvadsAutoImportSettings"
 const LEGACY_SETTING_KEY = "AutoImportSettings"
 const WORKSPACE_SETTINGS_NAME = "_IAI_SETTINGS"
-const DEFAULT_IMPORT_LAYOUT = "[services]\n\n[modules]\n\n[folders]\n\n[remotes]"
+const DEFAULT_IMPORT_LAYOUT = "[services]\n\n[folders]\n\n[modules]\n\n[remotes]"
+const LEGACY_IMPORT_LAYOUT = "[services]\n\n[modules]\n\n[folders]\n\n[remotes]"
 
 const DEFAULT_SETTINGS: Types.Settings = {
 	enabled = true,
 	autoModules = true,
 	stringRequires = false,
 	requireMode = "global",
+	callStyle = "parentheses",
 	keyword = "const",
+	stringQuote = "double",
 	prefix = ":",
 	autoServices = true,
+	autoInstances = true,
 	autoRemotes = true,
 	autoFolders = false,
+	skipFolders = true,
+	enableQuickAccess = true,
+	commandBarAutocomplete = false,
+	sectionPadding = 1,
+	noImportTag = "CodeKitIgnore",
+	customNameAttribute = "CodeKitName",
 	importFolderDepth = "First",
 	semicolons = false,
 	importSort = "longestFirst",
 	importLayout = DEFAULT_IMPORT_LAYOUT,
 	additionalServices = {},
+	customServiceAliases = {},
 	clientDirectories = {},
 	ignoredNames = { "_Index", "_index", "node_modules", "include" },
+	duckableMode = false,
+	services = {
+		useConst = true,
+		sortOrder = "longestFirst",
+		prefix = ":",
+		casing = "preserve",
+		typeAnnotation = false,
+		typeAssertion = false,
+	},
+	modules = {
+		useConst = true,
+		sortOrder = "longestFirst",
+		prefix = ":",
+		casing = "preserve",
+		typeAnnotation = false,
+		typeAssertion = false,
+		hasPadding = true,
+		nested = false,
+		showInTypeChecking = true,
+		serverScriptsRequire = "dynamic",
+		clientScriptsRequire = "dynamic",
+		relativeRequireByString = false,
+		absoluteRequireByString = false,
+	},
+	instances = {
+		useConst = true,
+		sortOrder = "longestFirst",
+		prefix = ":",
+		casing = "preserve",
+		typeAnnotation = false,
+		typeAssertion = false,
+	},
+	definitions = {
+		enabled = true,
+		useConst = true,
+		sortOrder = "longestFirst",
+		prefix = ":",
+		casing = "preserve",
+		typeAnnotation = true,
+		typeAssertion = false,
+	},
+	indexing = {
+		clientScripts = "WaitForChild",
+		serverScripts = "Direct",
+	},
 	overrideWorkspaceSettings = false,
 }
 
@@ -44,6 +100,36 @@ const VALID_IMPORT_FOLDER_DEPTHS = {
 	["First Two"] = true,
 	["All"] = true,
 }
+
+const VALID_CALL_STYLES = {
+	parentheses = true,
+	bare = true,
+}
+
+const VALID_STRING_QUOTES = {
+	double = true,
+	single = true,
+}
+
+const VALID_CASINGS = {
+	preserve = true,
+	camel = true,
+	pascal = true,
+	snake = true,
+}
+
+const VALID_INDEXING_MODES = {
+	WaitForChild = true,
+	FindFirstChild = true,
+	Direct = true,
+}
+
+const VALID_MODULE_REQUIRE_MODES = {
+	dynamic = true,
+	relative = true,
+	absolute = true,
+}
+
 
 const function cloneList(list: { string }): { string }
 	const cloned = {}
@@ -67,6 +153,94 @@ const function normalizeList(value: any, fallback: { string }): { string }
 	end
 
 	return normalized
+end
+
+const function normalizeNumber(value: any, fallback: number, minimum: number, maximum: number): number
+	if typeof(value) ~= "number" then
+		return fallback
+	end
+	return math.clamp(math.floor(value), minimum, maximum)
+end
+
+const function normalizeEnum(value: any, fallback: string, valid: { [string]: boolean }): string
+	if typeof(value) ~= "string" or valid[value] ~= true then
+		return fallback
+	end
+	return value
+end
+
+const function normalizeSection(value: any, fallback: Types.SectionSettings): Types.SectionSettings
+	if typeof(value) ~= "table" then
+		value = {}
+	end
+
+	return {
+		useConst = value.useConst ~= false,
+		sortOrder = normalizeEnum(value.sortOrder, fallback.sortOrder, VALID_IMPORT_SORTS) :: Types.ImportSort,
+		prefix = if typeof(value.prefix) == "string" then value.prefix else fallback.prefix,
+		casing = normalizeEnum(value.casing, fallback.casing, VALID_CASINGS) :: Types.Casing,
+		typeAnnotation = value.typeAnnotation == true,
+		typeAssertion = value.typeAssertion == true,
+	}
+end
+
+const function normalizeModules(value: any, fallback: Types.ModulesSettings): Types.ModulesSettings
+	const base = normalizeSection(value, fallback)
+	if typeof(value) ~= "table" then
+		value = {}
+	end
+
+	return {
+		useConst = base.useConst,
+		sortOrder = base.sortOrder,
+		prefix = base.prefix,
+		casing = base.casing,
+		typeAnnotation = base.typeAnnotation,
+		typeAssertion = base.typeAssertion,
+		hasPadding = value.hasPadding ~= false,
+		nested = value.nested == true,
+		showInTypeChecking = value.showInTypeChecking ~= false,
+		serverScriptsRequire = normalizeEnum(
+			value.serverScriptsRequire,
+			fallback.serverScriptsRequire,
+			VALID_MODULE_REQUIRE_MODES
+		) :: Types.ModuleRequireMode,
+		clientScriptsRequire = normalizeEnum(
+			value.clientScriptsRequire,
+			fallback.clientScriptsRequire,
+			VALID_MODULE_REQUIRE_MODES
+		) :: Types.ModuleRequireMode,
+		relativeRequireByString = value.relativeRequireByString == true,
+		absoluteRequireByString = value.absoluteRequireByString == true,
+	}
+end
+
+const function normalizeDefinitions(value: any, fallback: Types.DefinitionsSettings): Types.DefinitionsSettings
+	const base = normalizeSection(value, fallback)
+	if typeof(value) ~= "table" then
+		value = {}
+	end
+
+	return {
+		enabled = value.enabled ~= false,
+		useConst = base.useConst,
+		sortOrder = base.sortOrder,
+		prefix = base.prefix,
+		casing = base.casing,
+		typeAnnotation = base.typeAnnotation,
+		typeAssertion = base.typeAssertion,
+	}
+end
+
+const function normalizeIndexing(value: any, fallback: Types.IndexingSettings): Types.IndexingSettings
+	if typeof(value) ~= "table" then
+		value = {}
+	end
+
+	return {
+		clientScripts = normalizeEnum(value.clientScripts, fallback.clientScripts, VALID_INDEXING_MODES) :: Types.IndexingMode,
+		serverScripts = normalizeEnum(value.serverScripts, fallback.serverScripts, VALID_INDEXING_MODES) :: Types.IndexingMode,
+	}
 end
 
 const function normalizeSettings(value: any): Types.Settings
@@ -96,20 +270,42 @@ const function normalizeSettings(value: any): Types.Settings
 		autoModules = value.autoModules ~= false,
 		stringRequires = value.stringRequires == true,
 		requireMode = requireMode,
+		callStyle = normalizeEnum(value.callStyle, DEFAULT_SETTINGS.callStyle, VALID_CALL_STYLES) :: Types.CallStyle,
 		keyword = keyword,
+		stringQuote = normalizeEnum(value.stringQuote, DEFAULT_SETTINGS.stringQuote, VALID_STRING_QUOTES) :: Types.StringQuote,
 		prefix = if typeof(value.prefix) == "string" then value.prefix else DEFAULT_SETTINGS.prefix,
 		autoServices = value.autoServices ~= false,
+		autoInstances = value.autoInstances ~= false,
 		autoRemotes = value.autoRemotes ~= false,
 		autoFolders = value.autoFolders == true,
+		skipFolders = value.skipFolders ~= false,
+		enableQuickAccess = value.enableQuickAccess ~= false,
+		commandBarAutocomplete = value.commandBarAutocomplete == true,
+		sectionPadding = normalizeNumber(value.sectionPadding, DEFAULT_SETTINGS.sectionPadding, 0, 4),
+		noImportTag = if typeof(value.noImportTag) == "string" and value.noImportTag ~= ""
+			then value.noImportTag
+			else DEFAULT_SETTINGS.noImportTag,
+		customNameAttribute = if typeof(value.customNameAttribute) == "string" and value.customNameAttribute ~= ""
+			then value.customNameAttribute
+			else DEFAULT_SETTINGS.customNameAttribute,
 		importFolderDepth = importFolderDepth,
 		semicolons = value.semicolons == true,
 		importSort = importSort,
-		importLayout = if typeof(value.importLayout) == "string" and value.importLayout ~= ""
-			then value.importLayout
-			else DEFAULT_SETTINGS.importLayout,
+		importLayout = if value.importLayout == LEGACY_IMPORT_LAYOUT
+			then DEFAULT_SETTINGS.importLayout
+			elseif typeof(value.importLayout) == "string" and value.importLayout ~= ""
+				then value.importLayout
+				else DEFAULT_SETTINGS.importLayout,
 		additionalServices = normalizeList(value.additionalServices, DEFAULT_SETTINGS.additionalServices),
+		customServiceAliases = normalizeList(value.customServiceAliases, DEFAULT_SETTINGS.customServiceAliases),
 		clientDirectories = normalizeList(value.clientDirectories, DEFAULT_SETTINGS.clientDirectories),
 		ignoredNames = normalizeList(value.ignoredNames, DEFAULT_SETTINGS.ignoredNames),
+		duckableMode = value.duckableMode == true,
+		services = normalizeSection(value.services, DEFAULT_SETTINGS.services),
+		modules = normalizeModules(value.modules, DEFAULT_SETTINGS.modules),
+		instances = normalizeSection(value.instances, DEFAULT_SETTINGS.instances),
+		definitions = normalizeDefinitions(value.definitions, DEFAULT_SETTINGS.definitions),
+		indexing = normalizeIndexing(value.indexing, DEFAULT_SETTINGS.indexing),
 		overrideWorkspaceSettings = value.overrideWorkspaceSettings == true,
 	}
 end
@@ -228,13 +424,7 @@ const function create(plugin: Plugin)
 			return globalSettings
 		end,
 		getWorkspace = function(): Types.Settings
-			if workspaceSettings == nil then
-				workspaceSettings = normalizeSettings(globalSettings)
-				if workspaceSettings then
-					workspaceSettings.overrideWorkspaceSettings = false
-				end
-			end
-			return workspaceSettings :: Types.Settings
+			return workspaceSettings or globalSettings
 		end,
 		hasWorkspace = function(): boolean
 			return workspaceSettings ~= nil
@@ -252,17 +442,15 @@ const function create(plugin: Plugin)
 				saveWorkspace()
 			end
 		end,
-		reset = function(scope: Types.SettingsScope)
-			if scope == "global" then
-				globalSettings = normalizeSettings(DEFAULT_SETTINGS)
-				saveGlobal()
-			else
-				workspaceSettings = normalizeSettings(DEFAULT_SETTINGS)
-				if workspaceSettings then
-					workspaceSettings.overrideWorkspaceSettings = false
-					saveWorkspace()
-				end
+		reset = function()
+			globalSettings = normalizeSettings(DEFAULT_SETTINGS)
+			workspaceSettings = nil
+			const workspaceModule = getWorkspaceModule()
+			if workspaceModule ~= nil then
+				workspaceModule:Destroy()
 			end
+			plugin:SetSetting(GLOBAL_SETTING_KEY, globalSettings)
+			fireChanged()
 		end,
 		refreshWorkspace = function()
 			workspaceSettings = loadWorkspaceSettings()

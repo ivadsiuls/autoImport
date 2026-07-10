@@ -158,20 +158,7 @@ const function bindPopup(popup: Frame, popupScale: UIScale, visibleSource)
 	end)
 end
 
-const function createWindow(plugin: Plugin, store: Store)
-	const widgetInfo = DockWidgetPluginGuiInfo.new(
-		Enum.InitialDockState.Float,
-		false,
-		false,
-		460,
-		330,
-		360,
-		250
-	)
-	const widget = plugin:CreateDockWidgetPluginGui(WIDGET_ID, widgetInfo)
-	widget.Name = "CodeKit Snippets"
-	widget.Title = "CodeKit Snippets"
-
+const function createPanel(parent: Instance, store: Store)
 	local editModule: ModuleScript? = nil
 	local editingSnippet: Snippet? = nil
 	local editingAliases: { string } = {}
@@ -880,13 +867,9 @@ const function createWindow(plugin: Plugin, store: Store)
 		cleanup(store.changed:Connect(refresh))
 
 		return root
-	end, widget)
+	end, parent)
 
 	return {
-		widget = widget,
-		toggle = function()
-			widget.Enabled = not widget.Enabled
-		end,
 		destroy = function()
 			cleanupEditModule()
 			destroyUi()
@@ -894,6 +877,33 @@ const function createWindow(plugin: Plugin, store: Store)
 	}
 end
 
+const function createWindow(plugin: Plugin, store: Store)
+	const widgetInfo = DockWidgetPluginGuiInfo.new(
+		Enum.InitialDockState.Float,
+		false,
+		false,
+		460,
+		330,
+		360,
+		250
+	)
+	const widget = plugin:CreateDockWidgetPluginGui(WIDGET_ID, widgetInfo)
+	widget.Name = "CodeKit Snippets"
+	widget.Title = "CodeKit Snippets"
+	const panel = createPanel(widget, store)
+
+	return {
+		widget = widget,
+		toggle = function()
+			widget.Enabled = not widget.Enabled
+		end,
+		destroy = function()
+			panel.destroy()
+		end,
+	}
+end
+
 return {
 	create = createWindow,
+	createPanel = createPanel,
 }

@@ -81,7 +81,9 @@ export type AutocompleteCallback = (
 ) -> AutocompleteResponse
 
 export type RequireMode = "local" | "global"
+export type CallStyle = "parentheses" | "bare"
 export type Keyword = "local" | "const"
+export type StringQuote = "double" | "single"
 export type ImportSort = "longestFirst"
 	| "longestLast"
 	| "alphabetical"
@@ -93,24 +95,71 @@ export type ImportSort = "longestFirst"
 	| "identifierFirst"
 	| "identifierLast"
 export type ImportFolderDepth = "First" | "First Two" | "All"
+export type Casing = "preserve" | "camel" | "pascal" | "snake"
+export type IndexingMode = "WaitForChild" | "FindFirstChild" | "Direct"
+export type ModuleRequireMode = "dynamic" | "relative" | "absolute"
+
+export type SectionSettings = {
+	useConst: boolean,
+	sortOrder: ImportSort,
+	prefix: string,
+	casing: Casing,
+	typeAnnotation: boolean,
+	typeAssertion: boolean,
+}
+
+export type ModulesSettings = SectionSettings & {
+	hasPadding: boolean,
+	nested: boolean,
+	showInTypeChecking: boolean,
+	serverScriptsRequire: ModuleRequireMode,
+	clientScriptsRequire: ModuleRequireMode,
+	relativeRequireByString: boolean,
+	absoluteRequireByString: boolean,
+}
+
+export type DefinitionsSettings = SectionSettings & {
+	enabled: boolean,
+}
+
+export type IndexingSettings = {
+	clientScripts: IndexingMode,
+	serverScripts: IndexingMode,
+}
 
 export type Settings = {
 	enabled: boolean,
 	autoModules: boolean,
 	stringRequires: boolean,
 	requireMode: RequireMode,
+	callStyle: CallStyle,
 	keyword: Keyword,
+	stringQuote: StringQuote,
 	prefix: string,
 	autoServices: boolean,
+	autoInstances: boolean,
 	autoRemotes: boolean,
 	autoFolders: boolean,
+	skipFolders: boolean,
+	enableQuickAccess: boolean,
+	commandBarAutocomplete: boolean,
+	sectionPadding: number,
+	noImportTag: string,
+	customNameAttribute: string,
 	importFolderDepth: ImportFolderDepth,
 	semicolons: boolean,
 	importSort: ImportSort,
 	importLayout: string,
 	additionalServices: { string },
+	customServiceAliases: { string },
 	clientDirectories: { string },
 	ignoredNames: { string },
+	duckableMode: boolean,
+	services: SectionSettings,
+	modules: ModulesSettings,
+	instances: SectionSettings,
+	definitions: DefinitionsSettings,
+	indexing: IndexingSettings,
 	overrideWorkspaceSettings: boolean,
 }
 

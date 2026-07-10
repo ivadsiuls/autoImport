@@ -1,5 +1,7 @@
 -- selene: allow(mixed_table)
 const HttpService = game:GetService("HttpService")
+const RunService = game:GetService("RunService")
+const TweenService = game:GetService("TweenService")
 const vide = require("./vide")
 const UiTheme = require("./components/Theme")
 const Themes = require("./Themes")
@@ -14,6 +16,11 @@ const WIDGET_ID = "codekit-themes"
 const CUSTOM_THEMES_KEY = "CodeKitCustomThemes"
 const CARD_HEIGHT = 126
 const CARD_PADDING = 10
+const CARD_ORDER_OFFSET = 4
+const PREVIEW_TEXT_SIZE = 14
+const PREVIEW_LINE_HEIGHT = 16
+const MAX_Z_INDEX = 2_147_483_647
+const MIN_LOADING_TIME = 0.25
 
 const function applyTheme(theme)
 	const studio = settings().Studio
@@ -66,6 +73,41 @@ const function normalizeThemePayload(decoded)
 	return colors
 end
 
+const function getThemeColor(theme, name: string, fallback: Color3): Color3
+	const color = theme.colors[name]
+	if color == nil then
+		return fallback
+	end
+	return Color3.fromRGB(color[1], color[2], color[3])
+end
+
+const function toHex(color: Color3): string
+	return string.format(
+		"#%02X%02X%02X",
+		math.round(color.R * 255),
+		math.round(color.G * 255),
+		math.round(color.B * 255)
+	)
+end
+
+const function getPreviewLines(theme): { string }
+	const keyword = toHex(getThemeColor(theme, "Luau Keyword Color", Color3.fromRGB(198, 120, 221)))
+	const functionColor = toHex(getThemeColor(theme, "Function Name Color", Color3.fromRGB(97, 175, 239)))
+	const builtin = toHex(getThemeColor(theme, "Built-in Function Color", Color3.fromRGB(86, 182, 194)))
+	const stringColor = toHex(getThemeColor(theme, "String Color", Color3.fromRGB(152, 195, 121)))
+	const comment = toHex(getThemeColor(theme, "Comment Color", Color3.fromRGB(92, 99, 112)))
+	const bool = toHex(getThemeColor(theme, "Bool Color", Color3.fromRGB(209, 154, 102)))
+	const number = toHex(getThemeColor(theme, "Number Color", Color3.fromRGB(209, 154, 102)))
+	const method = toHex(getThemeColor(theme, "Method Color", Color3.fromRGB(97, 175, 239)))
+
+	return {
+		`<font color="{keyword}">const</font> <font color="{functionColor}">Theme</font> = <font color="{builtin}">require</font>(<font color="{stringColor}">"CodeKit"</font>)`,
+		`<font color="{comment}">-- syntax preview</font>`,
+		`<font color="{keyword}">local</font> <font color="{functionColor}">enabled</font> = <font color="{bool}">true</font>`,
+		`<font color="{keyword}">if</font> <font color="{functionColor}">enabled</font> <font color="{keyword}">then</font> <font color="{functionColor}">Theme</font>:<font color="{method}">apply</font>(<font color="{number}">255</font>) <font color="{keyword}">end</font>`,
+	}
+end
+
 const function createButton(props): TextButton
 	const baseColor = props.background
 	const hoverColor = props.hoverBackground or baseColor:Lerp(Color3.fromRGB(255, 255, 255), 0.08)
@@ -95,47 +137,79 @@ const function createButton(props): TextButton
 	}) :: TextButton
 end
 
+const function createPreviewLine(
+	parent: Instance,
+	text: string,
+	lineNumber: number,
+	selection: Color3,
+	foreground: Color3
+): TextLabel
+	const highlighted = lineNumber == 3
+	return new("TextLabel")({
+		Name = if highlighted then "SelectedLine" else `Line{lineNumber}`,
+		Size = if highlighted
+			then UDim2.fromOffset(0, PREVIEW_LINE_HEIGHT)
+			else UDim2.new(1, -20, 0, PREVIEW_LINE_HEIGHT),
+		AutomaticSize = if highlighted then Enum.AutomaticSize.X else Enum.AutomaticSize.None,
+		Position = UDim2.fromOffset(16, 4 + (lineNumber - 1) * PREVIEW_LINE_HEIGHT),
+		BackgroundColor3 = selection,
+		BackgroundTransparency = if highlighted then 0 else 1,
+		BorderSizePixel = 0,
+		Text = text,
+		RichText = true,
+		TextColor3 = foreground,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		Font = Enum.Font.Code,
+		TextSize = PREVIEW_TEXT_SIZE,
+		Parent = parent,
+	}) :: TextLabel
+end
+
 const function createThemeCard(parent: Instance, theme, order: number, onUse)
+	const background = getThemeColor(theme, "Background Color", Color3.fromRGB(40, 44, 52))
+	const currentLine = getThemeColor(theme, "Current Line Highlight Color", background)
+	const selection = getThemeColor(theme, "Selection Background Color", currentLine)
+	const foreground = getThemeColor(theme, "Text Color", Color3.fromRGB(232, 235, 245))
+	const previewLines = getPreviewLines(theme)
+
 	return new("Frame")({
 		Name = "ThemeCard",
 		LayoutOrder = order,
 		Size = UDim2.new(1, 0, 0, CARD_HEIGHT),
-		BackgroundColor3 = UiTheme.DARKER,
+		BackgroundColor3 = background,
 		BorderSizePixel = 0,
 		ClipsDescendants = true,
 		Parent = parent,
 
 		UiTheme.stroke(UiTheme.BORDER),
-		new("ImageLabel")({
+		new("Frame")({
 			Name = "Preview",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = Color3.fromRGB(37, 37, 37),
-			BorderSizePixel = 0,
-			Image = theme.previewImage,
-			ScaleType = Enum.ScaleType.Crop,
-		}),
-		new("Frame")({
-			Name = "Shade",
-			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BackgroundTransparency = 0.58,
-			BorderSizePixel = 0,
-		}),
-		new("Frame")({
-			Name = "BottomShade",
-			Size = UDim2.new(1, 0, 0, 64),
-			Position = UDim2.new(0, 0, 1, -64),
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BackgroundTransparency = 0,
+			Size = UDim2.new(1, 0, 1, -42),
+			BackgroundColor3 = background,
 			BorderSizePixel = 0,
 
-			new("UIGradient")({
-				Rotation = 90,
-				Transparency = NumberSequence.new({
-					NumberSequenceKeypoint.new(0, 1),
-					NumberSequenceKeypoint.new(1, 0),
-				}),
+			new("Frame")({
+				Name = "Ruler",
+				Size = UDim2.new(0, 1, 1, 0),
+				Position = UDim2.fromOffset(8, 0),
+				BackgroundColor3 = currentLine,
+				BackgroundTransparency = 0.2,
+				BorderSizePixel = 0,
 			}),
+			vide.action(function(preview)
+				for lineNumber, lineText in previewLines do
+					createPreviewLine(preview, lineText, lineNumber, selection, foreground)
+				end
+			end),
+		}),
+		new("Frame")({
+			Name = "BottomBar",
+			Size = UDim2.new(1, 0, 0, 42),
+			Position = UDim2.new(0, 0, 1, -42),
+			BackgroundColor3 = UiTheme.DARK,
+			BackgroundTransparency = 0.08,
+			BorderSizePixel = 0,
 		}),
 		new("TextLabel")({
 			Name = "Name",
@@ -168,31 +242,72 @@ const function createThemeCard(parent: Instance, theme, order: number, onUse)
 	})
 end
 
-const function createWindow(plugin: Plugin)
-	const widgetInfo = DockWidgetPluginGuiInfo.new(
-		Enum.InitialDockState.Float,
-		false,
-		false,
-		420,
-		330,
-		320,
-		250
-	)
-	const widget = plugin:CreateDockWidgetPluginGui(WIDGET_ID, widgetInfo)
-	widget.Name = "CodeKit Themes"
-	widget.Title = "CodeKit Themes"
-
+const function createPanel(parent: Instance, plugin: Plugin)
 	local contentFrame: ScrollingFrame
 	local importNameBox: TextBox
-	local importImageBox: TextBox
 	local importJsonBox: TextBox
 	local exportBox: TextBox
+	local loadingImage: ImageLabel
 
 	const selectedTheme = source(nil)
 	const customThemes = source(plugin:GetSetting(CUSTOM_THEMES_KEY) or {})
+	const searchQuery = source("")
 	const importVisible = source(false)
 	const exportVisible = source(false)
+	const loadingVisible = source(false)
 	const previousTheme = source(nil)
+	local loadingAnimationId = 0
+	local loadingStartedAt = 0
+
+	const function startLoading()
+		loadingAnimationId += 1
+		const animationId = loadingAnimationId
+		loadingStartedAt = os.clock()
+		loadingVisible(true)
+		loadingImage.Size = UDim2.fromOffset(62, 62)
+
+		task.spawn(function()
+			while animationId == loadingAnimationId and loadingVisible() do
+				const grow = TweenService:Create(
+					loadingImage,
+					TweenInfo.new(1.35, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+					{ Size = UDim2.fromOffset(86, 86) }
+				)
+				grow:Play()
+				grow.Completed:Wait()
+				if animationId ~= loadingAnimationId or not loadingVisible() then
+					return
+				end
+
+				const shrink = TweenService:Create(
+					loadingImage,
+					TweenInfo.new(1.35, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+					{ Size = UDim2.fromOffset(62, 62) }
+				)
+				shrink:Play()
+				shrink.Completed:Wait()
+			end
+		end)
+	end
+
+	const function stopLoading()
+		loadingAnimationId += 1
+		loadingVisible(false)
+	end
+
+	const function loadTheme(theme)
+		startLoading()
+		task.spawn(function()
+			RunService.Heartbeat:Wait()
+			task.wait(0.1)
+			applyTheme(theme)
+			const remaining = MIN_LOADING_TIME - (os.clock() - loadingStartedAt)
+			if remaining > 0 then
+				task.wait(remaining)
+			end
+			stopLoading()
+		end)
+	end
 
 	const function saveCustomThemes(nextThemes)
 		customThemes(nextThemes)
@@ -212,15 +327,37 @@ const function createWindow(plugin: Plugin)
 
 	const function renderThemes()
 		for _, child in contentFrame:GetChildren() do
-			if child.Name == "ThemeCard" then
+			if child.Name == "ThemeCard" or child.Name == "NoResults" then
 				child:Destroy()
 			end
 		end
 
-		for index, theme in getAllThemes() do
-			createThemeCard(contentFrame, theme, index + 3, function(nextTheme)
+		const query = string.lower(string.gsub(searchQuery(), "^%s*(.-)%s*$", "%1"))
+		local themeIndex = 0
+		for _, theme in getAllThemes() do
+			if query ~= "" and string.find(string.lower(theme.name), query, 1, true) == nil then
+				continue
+			end
+
+			themeIndex += 1
+			createThemeCard(contentFrame, theme, themeIndex + CARD_ORDER_OFFSET, function(nextTheme)
 				selectedTheme(nextTheme)
 			end)
+		end
+
+		if themeIndex == 0 then
+			new("TextLabel")({
+				Name = "NoResults",
+				LayoutOrder = CARD_ORDER_OFFSET,
+				Size = UDim2.new(1, 0, 0, 50),
+				BackgroundColor3 = UiTheme.SECTION,
+				BorderSizePixel = 0,
+				Text = "No themes match your search.",
+				TextColor3 = UiTheme.MUTED,
+				Font = Enum.Font.SourceSans,
+				TextSize = 16,
+				UiTheme.stroke(UiTheme.BORDER),
+			})
 		end
 	end
 
@@ -318,15 +455,42 @@ const function createWindow(plugin: Plugin)
 						activated = function()
 							const theme = previousTheme()
 							if theme ~= nil then
-								applyTheme(theme)
+								loadTheme(theme)
 								previousTheme(nil)
 							end
 						end,
 					}),
 				}),
+				new("TextBox")({
+					Name = "Search",
+					LayoutOrder = 3,
+					Size = UDim2.new(1, 0, 0, 34),
+					BackgroundColor3 = UiTheme.DARKER,
+					BorderSizePixel = 0,
+					ClearTextOnFocus = false,
+					PlaceholderText = "Search themes...",
+					PlaceholderColor3 = UiTheme.MUTED,
+					Text = "",
+					TextColor3 = UiTheme.TEXT,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					Font = Enum.Font.SourceSans,
+					TextSize = 16,
+					vide.action(function(searchBox)
+						cleanup(searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+							searchQuery(searchBox.Text)
+						end))
+					end),
+
+					UiTheme.stroke(UiTheme.BORDER),
+					new("UIPadding")({
+						PaddingLeft = UDim.new(0, 10),
+						PaddingRight = UDim.new(0, 10),
+					}),
+				}),
 				vide.action(function()
 					effect(function()
 						customThemes()
+						searchQuery()
 						renderThemes()
 					end)
 				end),
@@ -341,7 +505,7 @@ const function createWindow(plugin: Plugin)
 				Visible = false,
 				vide.action(function(dimmer)
 					effect(function()
-						const visible = selectedTheme() ~= nil or importVisible() or exportVisible()
+						const visible = selectedTheme() ~= nil or importVisible() or exportVisible() or loadingVisible()
 						if visible then
 							dimmer.Visible = true
 							dimmer.BackgroundTransparency = 1
@@ -418,11 +582,10 @@ const function createWindow(plugin: Plugin)
 						end
 						previousTheme({
 							name = "Previous",
-							previewImage = "",
 							colors = getCurrentTheme(theme.colors),
 						})
 						selectedTheme(nil)
-						applyTheme(theme)
+						loadTheme(theme)
 					end,
 				}),
 				createButton({
@@ -440,7 +603,7 @@ const function createWindow(plugin: Plugin)
 			new("Frame")({
 				Name = "ImportTheme",
 				AnchorPoint = Vector2.new(0.5, 0.5),
-				Size = UDim2.fromOffset(390, 360),
+				Size = UDim2.fromOffset(390, 300),
 				Position = UDim2.fromScale(0.5, 0.5),
 				BackgroundColor3 = UiTheme.DARK,
 				BorderSizePixel = 0,
@@ -483,29 +646,9 @@ const function createWindow(plugin: Plugin)
 					new("UIPadding")({ PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }),
 				}),
 				new("TextBox")({
-					Name = "ImageBox",
-					Size = UDim2.new(1, -32, 0, 34),
-					Position = UDim2.fromOffset(16, 94),
-					BackgroundColor3 = UiTheme.DARKER,
-					BorderSizePixel = 0,
-					ClearTextOnFocus = false,
-					Text = "",
-					PlaceholderText = "Preview image id",
-					PlaceholderColor3 = UiTheme.MUTED,
-					TextColor3 = UiTheme.TEXT,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					Font = Enum.Font.SourceSans,
-					TextSize = 17,
-					vide.action(function(instance)
-						importImageBox = instance :: TextBox
-					end),
-					UiTheme.stroke(UiTheme.BORDER),
-					new("UIPadding")({ PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }),
-				}),
-				new("TextBox")({
 					Name = "JsonBox",
 					Size = UDim2.new(1, -32, 0, 150),
-					Position = UDim2.fromOffset(16, 136),
+					Position = UDim2.fromOffset(16, 94),
 					BackgroundColor3 = UiTheme.DARKER,
 					BorderSizePixel = 0,
 					ClearTextOnFocus = false,
@@ -555,19 +698,13 @@ const function createWindow(plugin: Plugin)
 							return
 						end
 						const nextThemes = table.clone(customThemes())
-						local image = importImageBox.Text
-						if image ~= "" and string.find(image, "rbxassetid://", 1, true) ~= 1 then
-							image = `rbxassetid://{image}`
-						end
 						table.insert(nextThemes, {
 							name = importNameBox.Text,
-							previewImage = image,
 							colors = colors,
 						})
 						saveCustomThemes(nextThemes)
 						importVisible(false)
 						importNameBox.Text = ""
-						importImageBox.Text = ""
 						importJsonBox.Text = ""
 					end,
 				}),
@@ -645,10 +782,77 @@ const function createWindow(plugin: Plugin)
 					end,
 				}),
 			}),
+			new("Frame")({
+				Name = "LoadingPopup",
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = UiTheme.DARKER,
+				BackgroundTransparency = 0.08,
+				BorderSizePixel = 0,
+				Active = true,
+				Visible = false,
+				ZIndex = MAX_Z_INDEX - 1,
+				vide.action(function(popup)
+					effect(function()
+						popup.Visible = loadingVisible()
+					end)
+				end),
+
+				new("ImageLabel")({
+					Name = "LoadingImage",
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Size = UDim2.fromOffset(62, 62),
+					Position = UDim2.fromScale(0.5, 0.5),
+					BackgroundTransparency = 1,
+					BorderSizePixel = 0,
+					Image = "rbxassetid://83388302238556",
+					ScaleType = Enum.ScaleType.Fit,
+					ZIndex = MAX_Z_INDEX,
+					vide.action(function(image)
+						loadingImage = image :: ImageLabel
+					end),
+				}),
+				new("TextLabel")({
+					Name = "LoadingLabel",
+					AnchorPoint = Vector2.new(0.5, 0.5),
+					Size = UDim2.fromOffset(180, 24),
+					Position = UDim2.new(0.5, 0, 0.5, 58),
+					BackgroundTransparency = 1,
+					BorderSizePixel = 0,
+					Text = "Loading...",
+					TextColor3 = UiTheme.TEXT,
+					Font = Enum.Font.SourceSansSemibold,
+					TextSize = 16,
+					TextXAlignment = Enum.TextXAlignment.Center,
+					TextYAlignment = Enum.TextYAlignment.Center,
+					ZIndex = MAX_Z_INDEX,
+				}),
+			}),
 		})
 
 		return root
-	end, widget)
+	end, parent)
+
+	return {
+		destroy = function()
+			destroyUi()
+		end,
+	}
+end
+
+const function createWindow(plugin: Plugin)
+	const widgetInfo = DockWidgetPluginGuiInfo.new(
+		Enum.InitialDockState.Float,
+		false,
+		false,
+		420,
+		330,
+		320,
+		250
+	)
+	const widget = plugin:CreateDockWidgetPluginGui(WIDGET_ID, widgetInfo)
+	widget.Name = "CodeKit Themes"
+	widget.Title = "CodeKit Themes"
+	const panel = createPanel(widget, plugin)
 
 	return {
 		widget = widget,
@@ -656,11 +860,12 @@ const function createWindow(plugin: Plugin)
 			widget.Enabled = not widget.Enabled
 		end,
 		destroy = function()
-			destroyUi()
+			panel.destroy()
 		end,
 	}
 end
 
 return {
 	create = createWindow,
+	createPanel = createPanel,
 }

@@ -1,7 +1,6 @@
 /*.rbxl
 /*.rbxl.lock
 /sourcemap.json
-/import-plugin.rbxm
 /services.json
 
 .agents
@@ -9,3 +8,4 @@
 
 Packages
 build
+vendor
