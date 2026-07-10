@@ -4,6 +4,7 @@ const TextService = game:GetService("TextService")
 const vide = require("./vide")
 const Theme = require("./components/Theme")
 const parseScript = require("./parseScript")
+const Types = require("./Types")
 
 const new = vide.create
 const mount = vide.mount
@@ -39,6 +40,20 @@ const function getTodoText(commentText: string): string?
 	end
 
 	return trim(string.sub(commentText, startIndex))
+end
+
+const function getTodoLine(comment: Types.Comment): number
+	const startIndex = string.find(string.upper(comment.text), "TODO", 1, true)
+	if startIndex == nil then
+		return comment.range.start.line
+	end
+
+	const beforeTodo = string.sub(comment.text, 1, startIndex - 1)
+	local lineOffset = 0
+	for _ in string.gmatch(beforeTodo, "\n") do
+		lineOffset += 1
+	end
+	return comment.range.start.line + lineOffset
 end
 
 const function shortenText(text: string, width: number, font: Enum.Font, textSize: number): string
@@ -121,7 +136,7 @@ const function createPanel(parent: Instance)
 
 				table.insert(items, {
 					script = scriptInstance,
-					line = comment.range.start.line,
+					line = getTodoLine(comment),
 					text = todoText,
 					path = scriptInstance:GetFullName(),
 				})
@@ -173,10 +188,11 @@ const function createPanel(parent: Instance)
 		local rowIndex = 0
 		for _, item in todoItems do
 			rowIndex += 1
+			const rowHeight = math.max(ROW_HEIGHT, #string.split(item.text, "\n") * 20 + 12)
 			const row = new("TextButton")({
 				Name = "TodoRow",
 				LayoutOrder = rowIndex,
-				Size = UDim2.new(1, 0, 0, ROW_HEIGHT),
+				Size = UDim2.new(1, 0, 0, rowHeight),
 				BackgroundColor3 = if rowIndex % 2 == 0 then Theme.ROW_ALT else Theme.ROW,
 				BorderSizePixel = 0,
 				Text = "",
@@ -216,22 +232,23 @@ const function createPanel(parent: Instance)
 					TextColor3 = Theme.MUTED,
 					Font = Enum.Font.SourceSansBold,
 					TextSize = 15,
+					TextYAlignment = Enum.TextYAlignment.Top,
 				}),
 				new("TextLabel")({
 					Name = "Text",
 					Size = UDim2.new(1 - SCRIPT_COLUMN - LINE_COLUMN, 0, 1, 0),
 					Position = UDim2.fromScale(SCRIPT_COLUMN + LINE_COLUMN, 0),
 					BackgroundTransparency = 1,
-					Text = "",
+					Text = item.text,
 					TextXAlignment = Enum.TextXAlignment.Left,
+					TextYAlignment = Enum.TextYAlignment.Top,
+					TextWrapped = true,
 					TextColor3 = Theme.TEXT,
 					Font = Enum.Font.SourceSans,
 					TextSize = 15,
-					vide.action(function(label)
-						bindShortenedText(label :: TextLabel, item.text)
-					end),
 
 					new("UIPadding")({
+						PaddingTop = UDim.new(0, 8),
 						PaddingLeft = UDim.new(0, 8),
 						PaddingRight = UDim.new(0, 8),
 					}),

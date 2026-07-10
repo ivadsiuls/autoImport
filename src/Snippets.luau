@@ -1,4 +1,5 @@
 const HttpService = game:GetService("HttpService")
+const PluginStorage = require("./PluginStorage")
 
 export type Snippet = {
 	id: string,
@@ -181,14 +182,14 @@ const function saveWorkspaceSnippets(snippets: { Snippet })
 end
 
 const function create(plugin: Plugin): Store
-	local globalSnippets = normalizeSnippets(plugin:GetSetting(GLOBAL_SETTING_KEY))
+	local globalSnippets = normalizeSnippets(PluginStorage.load(plugin, GLOBAL_SETTING_KEY, {}))
 	local workspaceSnippets = loadWorkspaceSnippets()
 	const changed = Instance.new("BindableEvent")
 
 	const function save(scope: Scope)
 		if scope == "global" then
 			globalSnippets = normalizeSnippets(globalSnippets)
-			plugin:SetSetting(GLOBAL_SETTING_KEY, globalSnippets)
+			PluginStorage.save(plugin, GLOBAL_SETTING_KEY, globalSnippets)
 		else
 			workspaceSnippets = normalizeSnippets(workspaceSnippets)
 			saveWorkspaceSnippets(workspaceSnippets)

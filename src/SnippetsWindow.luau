@@ -164,6 +164,8 @@ const function createPanel(parent: Instance, store: Store)
 	local editingAliases: { string } = {}
 	local nameBox: TextBox
 	local aliasesBox: TextBox
+	local editingNameBox: TextBox
+	local editingAliasesBox: TextBox
 	local searchBox: TextBox
 	local listFrame: Frame
 	local contentLayout: UIListLayout
@@ -174,7 +176,6 @@ const function createPanel(parent: Instance, store: Store)
 	const snippets = source(store.get("global"))
 	const createPopupVisible = source(false)
 	const editingVisible = source(false)
-	const editingName = source("")
 	const deleteSnippet = source(nil :: Snippet?)
 	const modalVisible = source(false)
 
@@ -215,7 +216,7 @@ const function createPanel(parent: Instance, store: Store)
 	const function beginEditing(name: string, aliases: { string }, existing: Snippet?)
 		cleanupEditModule()
 		editingSnippet = existing
-		editingAliases = aliases
+		editingAliases = table.clone(aliases)
 
 		const module = Instance.new("ModuleScript")
 		module.Name = name
@@ -223,10 +224,18 @@ const function createPanel(parent: Instance, store: Store)
 		module.Parent = game
 		editModule = module
 
-		const success, message = ScriptEditorService:OpenScriptDocumentAsync(module)
-		assert(success, message)
-		editingName(module.Name)
+		editingNameBox.Text = module.Name
+		editingAliasesBox.Text = aliasesText(aliases)
 		editingVisible(true)
+	end
+
+	const function openCodeEditor()
+		if editModule == nil then
+			return
+		end
+
+		const success, message = ScriptEditorService:OpenScriptDocumentAsync(editModule)
+		assert(success, message)
 	end
 
 	const function finishEditing()
@@ -235,8 +244,14 @@ const function createPanel(parent: Instance, store: Store)
 			return
 		end
 
-		const sourceText = ScriptEditorService:GetEditorSource(module)
+		if editingNameBox.Text == "" then
+			return
+		end
+
+		module.Name = editingNameBox.Text
+		editingAliases = parseAliases(editingAliasesBox.Text)
 		local document = ScriptEditorService:FindScriptDocument(module)
+		const sourceText = if document == nil then module.Source else ScriptEditorService:GetEditorSource(module)
 		if document ~= nil then
 			const success, message = document:CloseAsync()
 			if not success then
@@ -255,7 +270,6 @@ const function createPanel(parent: Instance, store: Store)
 		editingSnippet = nil
 		editingAliases = {}
 		editingVisible(false)
-		editingName("")
 		refresh()
 	end
 
@@ -714,6 +728,7 @@ const function createPanel(parent: Instance, store: Store)
 						end
 						createPopupVisible(false)
 						beginEditing(nameBox.Text, parseAliases(aliasesBox.Text), nil)
+						openCodeEditor()
 						nameBox.Text = ""
 						aliasesBox.Text = ""
 					end,
@@ -722,7 +737,7 @@ const function createPanel(parent: Instance, store: Store)
 			new("Frame")({
 				Name = "EditingPopup",
 				AnchorPoint = Vector2.new(0.5, 0.5),
-				Size = UDim2.fromOffset(410, 205),
+				Size = UDim2.fromOffset(420, 300),
 				Position = UDim2.fromScale(0.5, 0.5),
 				BackgroundColor3 = UiTheme.DARK,
 				BorderSizePixel = 0,
@@ -735,37 +750,79 @@ const function createPanel(parent: Instance, store: Store)
 
 				UiTheme.stroke(UiTheme.BORDER),
 				new("TextLabel")({
-					Name = "YouAreEditing",
-					Size = UDim2.new(1, 0, 0, 34),
-					Position = UDim2.fromOffset(0, 32),
+					Name = "Title",
+					Size = UDim2.new(1, -24, 0, 32),
+					Position = UDim2.fromOffset(12, 12),
 					BackgroundTransparency = 1,
-					Text = "You are editing",
-					TextColor3 = UiTheme.MUTED,
-					Font = Enum.Font.SourceSans,
-					TextSize = 25,
-				}),
-				new("TextLabel")({
-					Name = "SnippetName",
-					Size = UDim2.new(1, -24, 0, 44),
-					Position = UDim2.fromOffset(12, 66),
-					BackgroundTransparency = 1,
+					Text = "Edit Snippet",
 					TextColor3 = UiTheme.TEXT,
 					Font = Enum.Font.SourceSansBold,
-					TextSize = 31,
-					vide.action(function(label)
-						effect(function()
-							label.Text = editingName()
-						end)
+					TextSize = 24,
+					TextXAlignment = Enum.TextXAlignment.Left,
+				}),
+				new("TextBox")({
+					Name = "NameBox",
+					Size = UDim2.new(1, -32, 0, 42),
+					Position = UDim2.fromOffset(16, 54),
+					BackgroundColor3 = UiTheme.DARKER,
+					BorderSizePixel = 0,
+					ClearTextOnFocus = false,
+					PlaceholderText = "Name",
+					PlaceholderColor3 = UiTheme.MUTED,
+					TextColor3 = UiTheme.TEXT,
+					Font = Enum.Font.SourceSans,
+					TextSize = 18,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					vide.action(function(instance)
+						editingNameBox = instance :: TextBox
 					end),
+
+					UiTheme.stroke(UiTheme.BORDER),
+					new("UIPadding")({
+						PaddingLeft = UDim.new(0, 10),
+						PaddingRight = UDim.new(0, 10),
+					}),
+				}),
+				new("TextBox")({
+					Name = "AliasesBox",
+					Size = UDim2.new(1, -32, 0, 42),
+					Position = UDim2.fromOffset(16, 104),
+					BackgroundColor3 = UiTheme.DARKER,
+					BorderSizePixel = 0,
+					ClearTextOnFocus = false,
+					PlaceholderText = "Aliases (comma separated)",
+					PlaceholderColor3 = UiTheme.MUTED,
+					TextColor3 = UiTheme.TEXT,
+					Font = Enum.Font.SourceSans,
+					TextSize = 18,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					vide.action(function(instance)
+						editingAliasesBox = instance :: TextBox
+					end),
+
+					UiTheme.stroke(UiTheme.BORDER),
+					new("UIPadding")({
+						PaddingLeft = UDim.new(0, 10),
+						PaddingRight = UDim.new(0, 10),
+					}),
 				}),
 				createButton({
-					name = "Finish",
-					size = UDim2.new(1, -68, 0, 56),
-					position = UDim2.new(0, 34, 1, -70),
+					name = "EditCode",
+					size = UDim2.new(1, -32, 0, 42),
+					position = UDim2.fromOffset(16, 158),
+					background = Color3.fromRGB(47, 51, 63),
+					text = "Edit Code",
+					textSize = 18,
+					activated = openCodeEditor,
+				}),
+				createButton({
+					name = "Done",
+					size = UDim2.new(1, -32, 0, 48),
+					position = UDim2.fromOffset(16, 230),
 					background = UiTheme.BLUE,
 					stroke = UiTheme.BLUE_DARK,
-					text = "Finish",
-					textSize = 20,
+					text = "Done",
+					textSize = 19,
 					activated = finishEditing,
 				}),
 			}),

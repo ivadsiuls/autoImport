@@ -5,6 +5,7 @@ const TweenService = game:GetService("TweenService")
 const vide = require("./vide")
 const UiTheme = require("./components/Theme")
 const Themes = require("./Themes")
+const PluginStorage = require("./PluginStorage")
 
 const new = vide.create
 const mount = vide.mount
@@ -166,7 +167,7 @@ const function createPreviewLine(
 	}) :: TextLabel
 end
 
-const function createThemeCard(parent: Instance, theme, order: number, onUse)
+const function createThemeCard(parent: Instance, theme, order: number, isCustom: boolean, onUse, onEdit, onDelete)
 	const background = getThemeColor(theme, "Background Color", Color3.fromRGB(40, 44, 52))
 	const currentLine = getThemeColor(theme, "Current Line Highlight Color", background)
 	const selection = getThemeColor(theme, "Selection Background Color", currentLine)
@@ -213,7 +214,7 @@ const function createThemeCard(parent: Instance, theme, order: number, onUse)
 		}),
 		new("TextLabel")({
 			Name = "Name",
-			Size = UDim2.new(1, -160, 0, 34),
+			Size = UDim2.new(1, if isCustom then -270 else -160, 0, 34),
 			Position = UDim2.new(0, CARD_PADDING, 1, -42),
 			BackgroundTransparency = 1,
 			Text = theme.name,
@@ -224,8 +225,8 @@ const function createThemeCard(parent: Instance, theme, order: number, onUse)
 		}),
 		new("TextButton")({
 			Name = "Use",
-			Size = UDim2.fromOffset(104, 30),
-			Position = UDim2.new(1, -CARD_PADDING - 104, 1, -40),
+			Size = UDim2.fromOffset(if isCustom then 76 else 104, 30),
+			Position = UDim2.new(1, -CARD_PADDING - if isCustom then 240 else 104, 1, -40),
 			BackgroundColor3 = UiTheme.BLUE,
 			BorderSizePixel = 0,
 			Text = "Use",
@@ -239,6 +240,42 @@ const function createThemeCard(parent: Instance, theme, order: number, onUse)
 
 			UiTheme.stroke(UiTheme.BLUE_DARK),
 		}),
+		new("TextButton")({
+			Name = "Edit",
+			Size = UDim2.fromOffset(76, 30),
+			Position = UDim2.new(1, -CARD_PADDING - 158, 1, -40),
+			BackgroundColor3 = Color3.fromRGB(47, 51, 63),
+			BorderSizePixel = 0,
+			Text = "Edit",
+			TextColor3 = Color3.fromRGB(255, 255, 255),
+			Font = Enum.Font.SourceSansBold,
+			TextSize = 13,
+			AutoButtonColor = true,
+			Visible = isCustom,
+			Activated = function()
+				onEdit(theme)
+			end,
+
+			UiTheme.stroke(UiTheme.BORDER),
+		}),
+		new("TextButton")({
+			Name = "Delete",
+			Size = UDim2.fromOffset(72, 30),
+			Position = UDim2.new(1, -CARD_PADDING - 78, 1, -40),
+			BackgroundColor3 = Color3.fromRGB(93, 28, 28),
+			BorderSizePixel = 0,
+			Text = "Delete",
+			TextColor3 = Color3.fromRGB(255, 255, 255),
+			Font = Enum.Font.SourceSansBold,
+			TextSize = 13,
+			AutoButtonColor = true,
+			Visible = isCustom,
+			Activated = function()
+				onDelete(theme)
+			end,
+
+			UiTheme.stroke(Color3.fromRGB(55, 22, 22)),
+		}),
 	})
 end
 
@@ -246,13 +283,15 @@ const function createPanel(parent: Instance, plugin: Plugin)
 	local contentFrame: ScrollingFrame
 	local importNameBox: TextBox
 	local importJsonBox: TextBox
+	local importTitleLabel: TextLabel
 	local exportBox: TextBox
 	local loadingImage: ImageLabel
 
 	const selectedTheme = source(nil)
-	const customThemes = source(plugin:GetSetting(CUSTOM_THEMES_KEY) or {})
+	const customThemes = source(PluginStorage.load(plugin, CUSTOM_THEMES_KEY, {}))
 	const searchQuery = source("")
 	const importVisible = source(false)
+	const editingTheme = source(nil)
 	const exportVisible = source(false)
 	const loadingVisible = source(false)
 	const previousTheme = source(nil)
@@ -311,7 +350,24 @@ const function createPanel(parent: Instance, plugin: Plugin)
 
 	const function saveCustomThemes(nextThemes)
 		customThemes(nextThemes)
-		plugin:SetSetting(CUSTOM_THEMES_KEY, nextThemes)
+		PluginStorage.save(plugin, CUSTOM_THEMES_KEY, nextThemes)
+	end
+
+	const function openThemeEditor(theme)
+		editingTheme(theme)
+		importNameBox.Text = if theme == nil then "" else theme.name
+		importJsonBox.Text = if theme == nil then "" else HttpService:JSONEncode(theme.colors)
+		importVisible(true)
+	end
+
+	const function deleteTheme(theme)
+		const nextThemes = {}
+		for _, customTheme in customThemes() do
+			if customTheme ~= theme then
+				table.insert(nextThemes, customTheme)
+			end
+		end
+		saveCustomThemes(nextThemes)
 	end
 
 	const function getAllThemes()
@@ -334,15 +390,25 @@ const function createPanel(parent: Instance, plugin: Plugin)
 
 		const query = string.lower(string.gsub(searchQuery(), "^%s*(.-)%s*$", "%1"))
 		local themeIndex = 0
-		for _, theme in getAllThemes() do
+		for _, theme in Themes do
 			if query ~= "" and string.find(string.lower(theme.name), query, 1, true) == nil then
 				continue
 			end
 
 			themeIndex += 1
-			createThemeCard(contentFrame, theme, themeIndex + CARD_ORDER_OFFSET, function(nextTheme)
+			createThemeCard(contentFrame, theme, themeIndex + CARD_ORDER_OFFSET, false, function(nextTheme)
 				selectedTheme(nextTheme)
-			end)
+			end, function() end, function() end)
+		end
+		for _, theme in customThemes() do
+			if query ~= "" and string.find(string.lower(theme.name), query, 1, true) == nil then
+				continue
+			end
+
+			themeIndex += 1
+			createThemeCard(contentFrame, theme, themeIndex + CARD_ORDER_OFFSET, true, function(nextTheme)
+				selectedTheme(nextTheme)
+			end, openThemeEditor, deleteTheme)
 		end
 
 		if themeIndex == 0 then
@@ -432,7 +498,7 @@ const function createPanel(parent: Instance, plugin: Plugin)
 						stroke = UiTheme.BLUE_DARK,
 						text = "Add",
 						activated = function()
-							importVisible(true)
+							openThemeEditor(nil)
 						end,
 					}),
 					createButton({
@@ -620,10 +686,16 @@ const function createPanel(parent: Instance, plugin: Plugin)
 					Size = UDim2.new(1, -24, 0, 32),
 					Position = UDim2.fromOffset(12, 10),
 					BackgroundTransparency = 1,
-					Text = "Add Theme",
+					Text = "",
 					TextColor3 = UiTheme.TEXT,
 					Font = Enum.Font.SourceSansBold,
 					TextSize = 24,
+					vide.action(function(label)
+						importTitleLabel = label :: TextLabel
+						effect(function()
+							label.Text = if editingTheme() == nil then "Add Theme" else "Edit Theme"
+						end)
+					end),
 				}),
 				new("TextBox")({
 					Name = "NameBox",
@@ -697,13 +769,26 @@ const function createPanel(parent: Instance, plugin: Plugin)
 							warn("Theme JSON did not contain colors")
 							return
 						end
-						const nextThemes = table.clone(customThemes())
-						table.insert(nextThemes, {
-							name = importNameBox.Text,
-							colors = colors,
-						})
+						const nextThemes = {}
+						const currentTheme = editingTheme()
+						if currentTheme == nil then
+							for _, theme in customThemes() do
+								table.insert(nextThemes, theme)
+							end
+							table.insert(nextThemes, {
+								name = importNameBox.Text,
+								colors = colors,
+							})
+						else
+							for _, theme in customThemes() do
+								table.insert(nextThemes, if theme == currentTheme
+									then { name = importNameBox.Text, colors = colors }
+									else theme)
+							end
+						end
 						saveCustomThemes(nextThemes)
 						importVisible(false)
+						editingTheme(nil)
 						importNameBox.Text = ""
 						importJsonBox.Text = ""
 					end,
@@ -717,6 +802,7 @@ const function createPanel(parent: Instance, plugin: Plugin)
 					textSize = 16,
 					activated = function()
 						importVisible(false)
+						editingTheme(nil)
 					end,
 				}),
 			}),

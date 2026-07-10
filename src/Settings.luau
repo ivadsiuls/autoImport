@@ -1,5 +1,6 @@
 const HttpService = game:GetService("HttpService")
 const Types = require("./Types")
+const PluginStorage = require("./PluginStorage")
 
 const GLOBAL_SETTING_KEY = "IvadsAutoImportSettings"
 const LEGACY_SETTING_KEY = "AutoImportSettings"
@@ -391,7 +392,9 @@ const function saveWorkspaceSettings(settings: Types.Settings)
 end
 
 const function create(plugin: Plugin)
-	local globalSettings = normalizeSettings(plugin:GetSetting(GLOBAL_SETTING_KEY) or plugin:GetSetting(LEGACY_SETTING_KEY))
+	local globalSettings = normalizeSettings(
+		PluginStorage.load(plugin, GLOBAL_SETTING_KEY, PluginStorage.load(plugin, LEGACY_SETTING_KEY, {}))
+	)
 	local workspaceSettings = loadWorkspaceSettings()
 	const changed = Instance.new("BindableEvent")
 
@@ -407,7 +410,7 @@ const function create(plugin: Plugin)
 	end
 
 	const function saveGlobal()
-		plugin:SetSetting(GLOBAL_SETTING_KEY, globalSettings)
+		PluginStorage.save(plugin, GLOBAL_SETTING_KEY, globalSettings)
 		fireChanged()
 	end
 
@@ -449,7 +452,7 @@ const function create(plugin: Plugin)
 			if workspaceModule ~= nil then
 				workspaceModule:Destroy()
 			end
-			plugin:SetSetting(GLOBAL_SETTING_KEY, globalSettings)
+			PluginStorage.save(plugin, GLOBAL_SETTING_KEY, globalSettings)
 			fireChanged()
 		end,
 		refreshWorkspace = function()
