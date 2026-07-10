@@ -1,7 +1,7 @@
 [package]
 name = "ivadsiuls/codekit"
 description = "a roblox coding toolkit with everything you need to get started"
-version = "3.1.0"
+version = "3.1.1"
 license = "MIT"
 realm = "shared"
 registry = "https://github.com/upliftgames/wally-index"
