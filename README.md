@@ -9,5 +9,5 @@
 <p align="center"><a href="https://create.roblox.com/store/asset/101929511023567/CodeKit">download here</a></p>
 
 <p align="center">
-	[▶ Watch the demo](https://files.catbox.moe/iqkyjx.mp4)
+	<a href="https://files.catbox.moe/iqkyjx.mp4">▶ Watch the demo</a>
 </p>
