@@ -79,6 +79,21 @@ const function quoteString(text: string, settings: Types.Settings): string
 	return string.format("%q", text)
 end
 
+const function formatRequireCall(argument: string, settings: Types.Settings): string
+	const trimmedArgument = string.gsub(argument, "^%s*(.-)%s*$", "%1")
+	if settings.callStyle == "bare" then
+		return `require {trimmedArgument}`
+	end
+	return `require({trimmedArgument})`
+end
+
+const function normalizeRequireCallSpacing(line: string): string
+	return string.gsub(line, "require%s*(%b())", function(call: string)
+		const argument = string.gsub(string.sub(call, 2, -2), "^%s*(.-)%s*$", "%1")
+		return `require({argument})`
+	end)
+end
+
 const function getSectionKeyword(sectionSettings: Types.SectionSettings): Types.Keyword
 	return if sectionSettings.useConst then "const" else "local"
 end
@@ -1021,6 +1036,16 @@ const function getFolderImports(root: Instance, target: Instance, rootIdentifier
 		return {}, rootIdentifier
 	end
 
+	if not settings.autoFolders then
+		local directExpression = rootIdentifier
+		local directCurrent: Instance = parent
+		while directCurrent ~= root do
+			directExpression ..= getPathSegmentExpression(directCurrent.Name)
+			directCurrent = directCurrent.Parent :: Instance
+		end
+		return {}, directExpression
+	end
+
 	const ancestors = {}
 	local current: Instance = parent
 	while current ~= root do
@@ -1034,7 +1059,7 @@ const function getFolderImports(root: Instance, target: Instance, rootIdentifier
 	local importedFolderCount = 0
 	for _, ancestor in ancestors do
 		expression ..= getPathSegmentExpression(ancestor.Name)
-		if settings.autoFolders and ancestor:IsA("Folder") and importedFolderCount < depthLimit then
+		if ancestor:IsA("Folder") and importedFolderCount < depthLimit then
 			const identifier = getImportIdentifierFromInstance(ancestor, settings)
 			table.insert(folderLines, finishStatement(`{getSectionKeyword(settings.instances)} {identifier} = {expression}`, settings))
 			expression = identifier
@@ -1158,10 +1183,10 @@ const function organizeImports(
 
 		const existingIndex = seenRequires[entry.identifier]
 		if existingIndex == nil then
-			table.insert(requireLines, lines[entry.lineNumber])
+			table.insert(requireLines, normalizeRequireCallSpacing(lines[entry.lineNumber]))
 			seenRequires[entry.identifier] = #requireLines
 		elseif entry.declaration == "const" then
-			requireLines[existingIndex] = lines[entry.lineNumber]
+			requireLines[existingIndex] = normalizeRequireCallSpacing(lines[entry.lineNumber])
 		end
 	end
 
@@ -1205,7 +1230,8 @@ const function organizeImports(
 		appendTrimmedGroup(importBlock, table.clone(group.prefix), tokenLines[group.token])
 	end
 
-	for token, bucket in tokenLines do
+	for _, token in { "[services]", "[folders]", "[modules]", "[remotes]" } do
+		const bucket = tokenLines[token]
 		if wroteToken[token] then
 			continue
 		end
@@ -1463,7 +1489,7 @@ end
 const function getUpdatedRequireLine(usage: RefactorUsage, newIdentifier: string, newArgument: string): string
 	local line = replaceFirst(usage.text, usage.requireArgument, newArgument)
 	line = string.gsub(line, `^(%s*[%a]+%s+){escapePattern(usage.identifier)}(%s*=)`, `%1{newIdentifier}%2`, 1)
-	return line
+	return normalizeRequireCallSpacing(line)
 end
 
 const function buildRefactorEdits(module: ModuleScript, snapshot: ModuleSnapshot): { RefactorEdit }
@@ -1702,6 +1728,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 		folderSources: { string }?,
 		remoteSource: string?
 	): string
+		const effectiveFolderSources = if settings.autoFolders then folderSources else nil
 		if settings.importPlacement == "At Cursor" then
 			const cursorLines = table.clone(patchLines)
 			cursorLines[position.line] = string.sub(line, 1, triggerStartCharacter - 1) .. identifier
@@ -1710,8 +1737,8 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			if acquireSource ~= nil then
 				table.insert(importLines, `{indentation}{acquireSource}`)
 			end
-			if folderSources ~= nil then
-				for _, folderLine in folderSources do
+			if effectiveFolderSources ~= nil then
+				for _, folderLine in effectiveFolderSources do
 					table.insert(importLines, `{indentation}{folderLine}`)
 				end
 			end
@@ -1741,7 +1768,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 			acquires,
 			acquireSource,
 			requireSource,
-			folderSources,
+			effectiveFolderSources,
 			remoteSource,
 			settings
 		)
@@ -1787,7 +1814,7 @@ const autocomplete: Types.AutocompleteCallback = function(request, response)
 				requirePath = `{baseExpression}{getPathSegmentExpression(module.Name)}`
 			end
 
-			const requireCall = if settings.callStyle == "bare" then `require {requirePath}` else `require({requirePath})`
+			const requireCall = formatRequireCall(requirePath, settings)
 			const requireSource = finishStatement(`{getSectionKeyword(settings.modules)} {identifier} = {requireCall}`, settings)
 
 			table.insert(items, {

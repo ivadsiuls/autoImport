@@ -283,8 +283,10 @@ const function createPanel(parent: Instance, plugin: Plugin)
 	local contentFrame: ScrollingFrame
 	local importNameBox: TextBox
 	local importJsonBox: TextBox
+	local importJsonScroll: ScrollingFrame
 	local importTitleLabel: TextLabel
 	local exportBox: TextBox
+	local exportScroll: ScrollingFrame
 	local loadingImage: ImageLabel
 
 	const selectedTheme = source(nil)
@@ -349,14 +351,15 @@ const function createPanel(parent: Instance, plugin: Plugin)
 	end
 
 	const function saveCustomThemes(nextThemes)
-		customThemes(nextThemes)
 		Data.save(plugin, CUSTOM_THEMES_KEY, nextThemes)
+		customThemes(nextThemes)
 	end
 
 	const function openThemeEditor(theme)
 		editingTheme(theme)
 		importNameBox.Text = if theme == nil then "" else theme.name
 		importJsonBox.Text = if theme == nil then "" else HttpService:JSONEncode(theme.colors)
+		importJsonScroll.CanvasPosition = Vector2.zero
 		importVisible(true)
 	end
 
@@ -509,6 +512,7 @@ const function createPanel(parent: Instance, plugin: Plugin)
 						text = "Export",
 						activated = function()
 							exportBox.Text = HttpService:JSONEncode(getCurrentTheme(Themes[1].colors))
+							exportScroll.CanvasPosition = Vector2.zero
 							exportVisible(true)
 						end,
 					}),
@@ -669,7 +673,7 @@ const function createPanel(parent: Instance, plugin: Plugin)
 			new("Frame")({
 				Name = "ImportTheme",
 				AnchorPoint = Vector2.new(0.5, 0.5),
-				Size = UDim2.fromOffset(390, 300),
+				Size = UDim2.fromOffset(440, 420),
 				Position = UDim2.fromScale(0.5, 0.5),
 				BackgroundColor3 = UiTheme.DARK,
 				BorderSizePixel = 0,
@@ -717,31 +721,53 @@ const function createPanel(parent: Instance, plugin: Plugin)
 					UiTheme.stroke(UiTheme.BORDER),
 					new("UIPadding")({ PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) }),
 				}),
-				new("TextBox")({
-					Name = "JsonBox",
-					Size = UDim2.new(1, -32, 0, 150),
+				new("ScrollingFrame")({
+					Name = "JsonScroll",
+					Size = UDim2.new(1, -32, 0, 270),
 					Position = UDim2.fromOffset(16, 94),
 					BackgroundColor3 = UiTheme.DARKER,
 					BorderSizePixel = 0,
-					ClearTextOnFocus = false,
-					MultiLine = true,
-					TextWrapped = true,
-					Text = "",
-					PlaceholderText = "Paste theme JSON here",
-					PlaceholderColor3 = UiTheme.MUTED,
-					TextColor3 = UiTheme.TEXT,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextYAlignment = Enum.TextYAlignment.Top,
-					Font = Enum.Font.SourceSans,
-					TextSize = 15,
+					CanvasSize = UDim2.new(),
+					AutomaticCanvasSize = Enum.AutomaticSize.Y,
+					ScrollingDirection = Enum.ScrollingDirection.Y,
+					ScrollBarThickness = 6,
+					Active = true,
+					ClipsDescendants = true,
 					vide.action(function(instance)
-						importJsonBox = instance :: TextBox
+						importJsonScroll = instance :: ScrollingFrame
 					end),
 					UiTheme.stroke(UiTheme.BORDER),
-					new("UIPadding")({
-						PaddingTop = UDim.new(0, 8),
-						PaddingLeft = UDim.new(0, 10),
-						PaddingRight = UDim.new(0, 10),
+					new("UIListLayout")({
+						FillDirection = Enum.FillDirection.Vertical,
+						SortOrder = Enum.SortOrder.LayoutOrder,
+					}),
+					new("TextBox")({
+						Name = "JsonBox",
+						LayoutOrder = 1,
+						Size = UDim2.new(1, -8, 0, 0),
+						AutomaticSize = Enum.AutomaticSize.Y,
+						BackgroundTransparency = 1,
+						BorderSizePixel = 0,
+						ClearTextOnFocus = false,
+						MultiLine = true,
+						TextEditable = true,
+						TextWrapped = true,
+						Text = "",
+						PlaceholderText = "Paste theme JSON here",
+						PlaceholderColor3 = UiTheme.MUTED,
+						TextColor3 = UiTheme.TEXT,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextYAlignment = Enum.TextYAlignment.Top,
+						Font = Enum.Font.SourceSans,
+						TextSize = 15,
+						vide.action(function(instance)
+							importJsonBox = instance :: TextBox
+						end),
+						new("UIPadding")({
+							PaddingTop = UDim.new(0, 8),
+							PaddingLeft = UDim.new(0, 10),
+							PaddingRight = UDim.new(0, 10),
+						}),
 					}),
 				}),
 				createButton({
@@ -809,7 +835,7 @@ const function createPanel(parent: Instance, plugin: Plugin)
 			new("Frame")({
 				Name = "ExportTheme",
 				AnchorPoint = Vector2.new(0.5, 0.5),
-				Size = UDim2.fromOffset(390, 270),
+				Size = UDim2.fromOffset(440, 420),
 				Position = UDim2.fromScale(0.5, 0.5),
 				BackgroundColor3 = UiTheme.DARK,
 				BorderSizePixel = 0,
@@ -831,28 +857,51 @@ const function createPanel(parent: Instance, plugin: Plugin)
 					Font = Enum.Font.SourceSansBold,
 					TextSize = 23,
 				}),
-				new("TextBox")({
-					Name = "ExportBox",
-					Size = UDim2.new(1, -32, 0, 160),
+				new("ScrollingFrame")({
+					Name = "ExportScroll",
+					Size = UDim2.new(1, -32, 0, 320),
 					Position = UDim2.fromOffset(16, 52),
 					BackgroundColor3 = UiTheme.DARKER,
 					BorderSizePixel = 0,
-					ClearTextOnFocus = false,
-					MultiLine = true,
-					Text = "",
-					TextColor3 = UiTheme.TEXT,
-					TextXAlignment = Enum.TextXAlignment.Left,
-					TextYAlignment = Enum.TextYAlignment.Top,
-					Font = Enum.Font.SourceSans,
-					TextSize = 15,
+					CanvasSize = UDim2.new(),
+					AutomaticCanvasSize = Enum.AutomaticSize.Y,
+					ScrollingDirection = Enum.ScrollingDirection.Y,
+					ScrollBarThickness = 6,
+					Active = true,
+					ClipsDescendants = true,
 					vide.action(function(instance)
-						exportBox = instance :: TextBox
+						exportScroll = instance :: ScrollingFrame
 					end),
 					UiTheme.stroke(UiTheme.BORDER),
-					new("UIPadding")({
-						PaddingTop = UDim.new(0, 8),
-						PaddingLeft = UDim.new(0, 10),
-						PaddingRight = UDim.new(0, 10),
+					new("UIListLayout")({
+						FillDirection = Enum.FillDirection.Vertical,
+						SortOrder = Enum.SortOrder.LayoutOrder,
+					}),
+					new("TextBox")({
+						Name = "ExportBox",
+						LayoutOrder = 1,
+						Size = UDim2.new(1, -8, 0, 0),
+						AutomaticSize = Enum.AutomaticSize.Y,
+						BackgroundTransparency = 1,
+						BorderSizePixel = 0,
+						ClearTextOnFocus = false,
+						MultiLine = true,
+						TextEditable = false,
+						TextWrapped = true,
+						Text = "",
+						TextColor3 = UiTheme.TEXT,
+						TextXAlignment = Enum.TextXAlignment.Left,
+						TextYAlignment = Enum.TextYAlignment.Top,
+						Font = Enum.Font.SourceSans,
+						TextSize = 15,
+						vide.action(function(instance)
+							exportBox = instance :: TextBox
+						end),
+						new("UIPadding")({
+							PaddingTop = UDim.new(0, 8),
+							PaddingLeft = UDim.new(0, 10),
+							PaddingRight = UDim.new(0, 10),
+						}),
 					}),
 				}),
 				createButton({

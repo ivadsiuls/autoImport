@@ -2,6 +2,7 @@
 /*.rbxl.lock
 /sourcemap.json
 /services.json
+/src/Version.luau
 
 .agents
 .codex

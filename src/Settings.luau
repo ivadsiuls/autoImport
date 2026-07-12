@@ -346,7 +346,8 @@ const function create(plugin: Plugin)
 			fireChanged()
 		end,
 		refreshWorkspace = function()
-			workspaceSettings = loadWorkspaceSettings()
+			const loaded = loadWorkspaceSettings()
+			workspaceSettings = if loaded == nil then nil else normalizeSettings(loaded)
 			fireChanged()
 		end,
 		destroy = function()

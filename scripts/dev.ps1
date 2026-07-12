@@ -13,6 +13,7 @@ if (-not (Test-Path $rojo)) {
 }
 
 & "$PSScriptRoot\clean.ps1"
+& "$PSScriptRoot\write-version.ps1"
 New-Item -ItemType Directory -Path "$projectRoot\build" -Force | Out-Null
 
 Push-Location $projectRoot

@@ -14,6 +14,7 @@ const SnippetsWindow = require("./SnippetsWindow")
 const ThemesWindow = require("./ThemesWindow")
 const TodoWindow = require("./TodoWindow")
 const RefactorWindow = require("./RefactorWindow")
+const VERSION = require("./Version")
 
 const new = vide.create
 const mount = vide.mount
@@ -129,8 +130,11 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 	local layoutEditSource = ""
 	local layoutEditRunning = false
 
-	const activeScope = (source("global" :: Types.SettingsScope) :: any) :: (arg: Types.SettingsScope?) -> Types.SettingsScope
-	const currentSettings = source(store.getGlobal())
+	const initialScope: Types.SettingsScope = if store.hasWorkspace() and not store.getGlobal().overrideWorkspaceSettings
+		then "workspace"
+		else "global"
+	const activeScope = (source(initialScope) :: any) :: (arg: Types.SettingsScope?) -> Types.SettingsScope
+	const currentSettings = source(if initialScope == "global" then store.getGlobal() else store.getWorkspace())
 	const renderTick = source(0)
 	const resetSettingsVisible = source(false)
 
@@ -529,7 +533,7 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 				}),
 				new("TextLabel")({
 					Name = "Title",
-					Size = UDim2.new(1, 0, 1, 0),
+					Size = UDim2.new(1, -90, 1, 0),
 					TextXAlignment = Enum.TextXAlignment.Left,
 					Text = "  CodeKit",
 					Font = Enum.Font.SourceSansSemibold,
@@ -539,6 +543,18 @@ const function createWindow(plugin: Plugin, store: Store, resources: WindowResou
 					vide.action(function(instance)
 						titleLabel = instance :: TextLabel
 					end),
+				}),
+				new("TextLabel")({
+					Name = "Version",
+					Size = UDim2.fromOffset(90, 42),
+					Position = UDim2.fromOffset(78, 3),
+					BackgroundTransparency = 1,
+					Text = `v{VERSION}`,
+					TextColor3 = Theme.MUTED,
+					TextXAlignment = Enum.TextXAlignment.Left,
+					TextYAlignment = Enum.TextYAlignment.Center,
+					Font = Enum.Font.SourceSans,
+					TextSize = 14,
 				}),
 			}),
 			new("Frame")({

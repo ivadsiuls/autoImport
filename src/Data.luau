@@ -1,4 +1,6 @@
 const HttpService = game:GetService("HttpService")
+const ServerStorage = game:GetService("ServerStorage")
+const ChangeHistoryService = game:GetService("ChangeHistoryService")
 
 const MAX_ATTEMPTS = 8
 const RETRY_DELAY = 0.1
@@ -94,15 +96,29 @@ const function load(plugin: Plugin, key: string, fallback: any): any
 end
 
 const function save(plugin: Plugin, key: string, value: any)
+	const serialized = HttpService:JSONEncode(value)
 	for attempt = 1, MAX_ATTEMPTS do
 		const success = pcall(function()
-			plugin:SetSetting(key, value)
+			plugin:SetSetting(key, serialized)
 		end)
 		if success then
 			task.wait(RETRY_DELAY * attempt)
 			const readSuccess, saved = readRaw(plugin, key)
-			if readSuccess and valuesEqual(saved, value) then
-				return
+			if readSuccess then
+				if saved == serialized then
+					return
+				end
+
+				if typeof(saved) == "string" then
+					const decodedSuccess, decoded = pcall(function()
+						return HttpService:JSONDecode(saved)
+					end)
+					if decodedSuccess and valuesEqual(decoded, value) then
+						return
+					end
+				elseif valuesEqual(saved, value) then
+					return
+				end
 			end
 		end
 
@@ -115,7 +131,7 @@ const function save(plugin: Plugin, key: string, value: any)
 end
 
 const function getWorkspaceModule(name: string): ModuleScript?
-	const existing = game:FindFirstChild(name)
+	const existing = ServerStorage:FindFirstChild(name) or game:FindFirstChild(name)
 	if existing == nil or not existing:IsA("ModuleScript") then
 		return nil
 	end
@@ -123,14 +139,28 @@ const function getWorkspaceModule(name: string): ModuleScript?
 end
 
 const function getOrCreateWorkspaceModule(name: string): ModuleScript
-	const existing = getWorkspaceModule(name)
+	const existing = ServerStorage:FindFirstChild(name)
 	if existing ~= nil then
+		if not existing:IsA("ModuleScript") then
+			error(`CodeKit cannot store workspace data in {existing:GetFullName()}; a different instance already uses that name.`)
+		end
 		return existing
+	end
+
+	-- keep workspace data under a real place service so Studio serializes it with the place.
+	const legacy = game:FindFirstChild(name)
+	if legacy ~= nil and legacy:IsA("ModuleScript") then
+		const module = Instance.new("ModuleScript")
+		module.Name = name
+		module.Archivable = true
+		module.Parent = ServerStorage
+		return module
 	end
 
 	const module = Instance.new("ModuleScript")
 	module.Name = name
-	module.Parent = game
+	module.Archivable = true
+	module.Parent = ServerStorage
 	return module
 end
 
@@ -196,6 +226,7 @@ const function saveWorkspace(name: string, comment: string, value: any)
 	if module.Source ~= source then
 		error(`CodeKit could not verify workspace data for {name}.`)
 	end
+	ChangeHistoryService:SetWaypoint("CodeKit workspace settings")
 end
 
 const function deleteWorkspace(name: string)
@@ -203,6 +234,13 @@ const function deleteWorkspace(name: string)
 	if module ~= nil then
 		module:Destroy()
 	end
+
+	const legacy = game:FindFirstChild(name)
+	if legacy ~= nil and legacy ~= module then
+		legacy:Destroy()
+	end
+
+	ChangeHistoryService:SetWaypoint("Reset CodeKit workspace settings")
 end
 
 return {
